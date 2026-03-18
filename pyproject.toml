@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nipp"
+version = "0.1.0"
+description = "Minimal FastMCP workout logger backed by local Postgres."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastmcp<3",
+  "psycopg[binary]>=3.2.0",
+]
+
+[project.scripts]
+nipp-mcp = "nipp.server:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
