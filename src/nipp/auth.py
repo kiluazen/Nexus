@@ -22,12 +22,12 @@ from mcp.server.auth.provider import (
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from psycopg import connect
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
 from nipp.config import Settings
+from nipp.db import get_pool
 
 DEFAULT_AUTH_CODE_EXPIRY_SECONDS = 5 * 60
 DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60
@@ -396,7 +396,8 @@ class NippOAuthProvider(OAuthProvider):
         )
 
     def _fetch_one(self, table_name: str, *, key_column: str, key: str) -> dict[str, Any] | None:
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"select raw_json::text from {table_name} where {key_column} = %s",
@@ -415,7 +416,8 @@ class NippOAuthProvider(OAuthProvider):
         key: str | None,
         payload: dict[str, Any],
     ) -> None:
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
@@ -429,7 +431,8 @@ class NippOAuthProvider(OAuthProvider):
             connection.commit()
 
     def _delete_row(self, table_name: str, *, key_column: str, key: str) -> None:
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"delete from {table_name} where {key_column} = %s",

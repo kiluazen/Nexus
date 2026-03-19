@@ -4,9 +4,8 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from psycopg import connect
-
 from nipp.config import Settings
+from nipp.db import get_pool
 from nipp.models import WorkoutEntry
 
 
@@ -113,7 +112,8 @@ class PostgresWorkoutStore:
 
     def _insert_payload(self, payload: dict[str, Any]) -> int:
         table_name = _validate_identifier(self._settings.table_name)
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
@@ -159,7 +159,8 @@ class PostgresWorkoutStore:
 
         params.append(limit)
         where_clause = " and ".join(clauses)
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
@@ -191,7 +192,8 @@ class PostgresWorkoutStore:
         event_type: str,
         payload: dict[str, Any],
     ) -> int:
-        with connect(self._settings.database_url) as connection:
+        pool = get_pool(self._settings)
+        with pool.connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
