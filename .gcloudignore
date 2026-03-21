@@ -6,4 +6,8 @@ dist/
 build/
 *.pyc
 *.egg-info/
+tests/
+supabase/
+.git/
 *.md
+!README.md

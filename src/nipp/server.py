@@ -5,7 +5,6 @@ from urllib.parse import urlsplit
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.tools.tool import ToolResult
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
@@ -13,7 +12,8 @@ import uvicorn
 
 from nipp.auth import NippOAuthProvider
 from nipp.config import Settings
-from nipp.storage import PostgresWorkoutStore
+from nipp.models import ValidationError
+from nipp.storage import Store
 
 settings = Settings.from_env()
 auth = None
@@ -21,13 +21,13 @@ if settings.base_url and settings.supabase_url and settings.supabase_publishable
     auth = NippOAuthProvider(settings)
 
 mcp = FastMCP("Nipp", auth=auth)
-_store: PostgresWorkoutStore | None = None
+_store: Store | None = None
 
 
-def get_store() -> PostgresWorkoutStore:
+def get_store() -> Store:
     global _store
     if _store is None:
-        _store = PostgresWorkoutStore(settings)
+        _store = Store(settings)
     return _store
 
 
@@ -45,392 +45,183 @@ async def root(_: Request) -> JSONResponse:
     return JSONResponse(
         {
             "name": "Nipp",
+            "version": "2.0",
             "mcp_path": settings.mcp_path,
-            "table_name": settings.table_name,
-            "generic_events_table_name": settings.generic_events_table_name,
             "auth_enabled": auth is not None,
-            "tools": ["log_workout_entry", "get_workout_history", "log_generic_event"],
+            "tools": ["log", "history", "update", "friends"],
         }
     )
 
 
-@mcp.resource(
-    "ui://widget/workout-history.html",
-    mime_type="text/html",
-    meta={
-        "openai/widgetDescription": "Workout analytics view with summary cards, highlights, and a workout timeline.",
-    },
-)
-def workout_history_widget() -> str:
-    return """<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nipp Workout Analytics</title>
-    <style>
-      :root {
-        --page: #DFD7CF;
-        --panel: #E9E0D7;
-        --panel-strong: #F1E9E2;
-        --text: #525051;
-        --muted: #9B9692;
-        --pink: #DA95DE;
-        --lavender: #845EC2;
-        --line: rgba(132, 94, 194, 0.22);
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        padding: 24px;
-        background:
-          radial-gradient(circle at top left, rgba(218,149,222,0.18), transparent 32%),
-          radial-gradient(circle at top right, rgba(132,94,194,0.16), transparent 30%),
-          var(--page);
-        color: var(--text);
-        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      .shell {
-        max-width: 1080px;
-        margin: 0 auto;
-        display: grid;
-        gap: 18px;
-      }
-      .hero {
-        display: grid;
-        grid-template-columns: 1.4fr .9fr;
-        gap: 18px;
-      }
-      .card {
-        background: rgba(241, 233, 226, 0.9);
-        border: 1px solid var(--line);
-        border-radius: 24px;
-        box-shadow: 0 18px 50px rgba(82, 80, 81, 0.07);
-      }
-      .intro {
-        padding: 28px;
-      }
-      .eyebrow {
-        color: var(--lavender);
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: .14em;
-        text-transform: uppercase;
-      }
-      h1 {
-        margin: 10px 0 10px;
-        font-size: 36px;
-        line-height: 1.05;
-      }
-      .muted {
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      .filters {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 18px;
-      }
-      .pill {
-        padding: 10px 14px;
-        border-radius: 999px;
-        background: rgba(218,149,222,0.14);
-        color: var(--text);
-        border: 1px solid rgba(218,149,222,0.28);
-        font-size: 13px;
-        font-weight: 600;
-      }
-      .pill.active {
-        background: linear-gradient(135deg, var(--pink), var(--lavender));
-        color: #fff;
-        border-color: transparent;
-      }
-      .summary {
-        padding: 22px;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .metric {
-        padding: 16px;
-        border-radius: 18px;
-        background: var(--panel);
-        border: 1px solid rgba(132, 94, 194, 0.14);
-      }
-      .metric-label {
-        color: var(--muted);
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-      }
-      .metric-value {
-        margin-top: 8px;
-        font-size: 28px;
-        font-weight: 700;
-      }
-      .body {
-        display: grid;
-        grid-template-columns: 1.2fr .8fr;
-        gap: 18px;
-      }
-      .timeline, .highlights {
-        padding: 22px;
-      }
-      .section-title {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 16px;
-      }
-      .section-title h2 {
-        margin: 0;
-        font-size: 20px;
-      }
-      .section-title span {
-        color: var(--lavender);
-        font-size: 12px;
-        font-weight: 700;
-        text-transform: uppercase;
-      }
-      .day {
-        padding: 16px 0;
-        border-top: 1px solid rgba(132, 94, 194, 0.16);
-      }
-      .day:first-of-type { border-top: 0; padding-top: 0; }
-      .day-label {
-        margin-bottom: 10px;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-      }
-      .entry {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 12px;
-        padding: 12px 14px;
-        border-radius: 16px;
-        background: rgba(223,215,207,0.45);
-        margin-bottom: 10px;
-      }
-      .entry-main strong {
-        display: block;
-        margin-bottom: 4px;
-      }
-      .entry-meta {
-        color: var(--muted);
-        font-size: 13px;
-      }
-      .entry-badge {
-        align-self: center;
-        padding: 8px 12px;
-        border-radius: 999px;
-        background: rgba(132,94,194,0.12);
-        color: var(--lavender);
-        font-size: 12px;
-        font-weight: 700;
-      }
-      .highlight {
-        padding: 16px;
-        border-radius: 18px;
-        background: linear-gradient(180deg, rgba(218,149,222,0.15), rgba(132,94,194,0.08));
-        border: 1px solid rgba(218,149,222,0.24);
-        margin-bottom: 12px;
-      }
-      .highlight strong {
-        display: block;
-        margin-bottom: 6px;
-      }
-      @media (max-width: 900px) {
-        .hero, .body { grid-template-columns: 1fr; }
-        body { padding: 16px; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="shell">
-      <section class="hero">
-        <article class="card intro">
-          <div class="eyebrow">Nipp Analytics</div>
-          <h1>Workout history, without the spreadsheet feeling.</h1>
-          <p class="muted">
-            This widget is designed to show a date-filtered workout timeline, quick
-            progress signals, and the most useful highlights at a glance.
-          </p>
-          <div class="filters">
-            <div class="pill active">Last 30 days</div>
-            <div class="pill">Bench press</div>
-            <div class="pill">Volume trend</div>
-          </div>
-        </article>
-        <aside class="card summary">
-          <div class="metric">
-            <div class="metric-label">Workouts</div>
-            <div class="metric-value">12</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">Unique Exercises</div>
-            <div class="metric-value">5</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">Total Sets</div>
-            <div class="metric-value">42</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">Heaviest Set</div>
-            <div class="metric-value">100 kg</div>
-          </div>
-        </aside>
-      </section>
-      <section class="body">
-        <article class="card timeline">
-          <div class="section-title">
-            <h2>Workout Timeline</h2>
-            <span>Grouped by day</span>
-          </div>
-          <div class="day">
-            <div class="day-label">Mar 18, 2026</div>
-            <div class="entry">
-              <div class="entry-main">
-                <strong>Bench press</strong>
-                <div class="entry-meta">3 sets x 8 reps · 50 kg</div>
-              </div>
-              <div class="entry-badge">Strength</div>
-            </div>
-            <div class="entry">
-              <div class="entry-main">
-                <strong>Incline dumbbell press</strong>
-                <div class="entry-meta">3 sets x 10 reps · 22.5 kg</div>
-              </div>
-              <div class="entry-badge">Accessory</div>
-            </div>
-          </div>
-          <div class="day">
-            <div class="day-label">Mar 16, 2026</div>
-            <div class="entry">
-              <div class="entry-main">
-                <strong>Back squat</strong>
-                <div class="entry-meta">3 sets x 5 reps · 100 kg</div>
-              </div>
-              <div class="entry-badge">Strength</div>
-            </div>
-          </div>
-        </article>
-        <aside class="card highlights">
-          <div class="section-title">
-            <h2>Highlights</h2>
-            <span>Useful first</span>
-          </div>
-          <div class="highlight">
-            <strong>Heaviest logged set</strong>
-            <div class="muted">Back squat · 100 kg on Mar 16</div>
-          </div>
-          <div class="highlight">
-            <strong>Latest workout</strong>
-            <div class="muted">Bench press session · 2 exercises logged</div>
-          </div>
-          <div class="highlight">
-            <strong>Why this layout</strong>
-            <div class="muted">Summary first, then timeline, then highlights. It reads like an analytics tool, not a row dump.</div>
-          </div>
-        </aside>
-      </section>
-    </main>
-  </body>
-</html>"""
+# -------------------------------------------------------------------- Tools
 
 
 @mcp.tool
-def log_workout_entry(
-    event_at: str,
-    exercise: str,
-    request_id: str,
-    sets: int | None = None,
-    reps: int | None = None,
-    weight: float | None = None,
-    duration_min: int | None = None,
-    notes: str | None = None,
+def log(
+    entries: list[dict],
+    date: str | None = None,
 ) -> dict:
-    """Log one workout entry into Postgres as raw JSON.
+    """Store workout and/or meal entries for the authenticated user.
+
+    Before calling this, call history() for the target date first. If an
+    exercise already exists that day, use update() instead — don't duplicate.
+
+    Workout shape:
+      {"type": "workout", "exercise": "Dumbbell Bench Press",
+       "exercise_key": "dumbbell_bench_press",
+       "sets": [{"weight_kg": 25, "reps": 8}]}
+    Cardio shape:
+      {"type": "workout", "exercise": "Jiu Jitsu",
+       "exercise_key": "jiu_jitsu", "duration_min": 60,
+       "notes": "Trained how to go from half control to side control or mount"}
+    Meal shape:
+      {"type": "meal", "meal_type": "lunch",
+       "items": [{"name": "chapati", "quantity": 2, "calories": 220,
+                  "protein_g": 6, "carbs_g": 40, "fat_g": 4}, ...]}
+
+    exercise_key: lowercase_with_underscores, shortest unambiguous name.
+    MUST reuse keys from your_exercises in history(). For new exercises,
+    confirm the name and key, by searching the web or asking the human.
+
+    Meals: estimate macros PER ITEM, not for the whole meal. Every item
+    must have name, quantity, calories, protein_g, carbs_g, fat_g. The
+    server computes totals. You need to think deeply for example if its a leg piece how big is that piece, its smaller than the usual portions i serach on web, maybe i shoudl half the protein value from what i found on web etc..  
+    ask clarifying questions to the user about the food cause this must be as accurate as possible.
 
     Args:
-        event_at: Workout time in RFC3339 or ISO 8601 format.
-        exercise: Exercise name, for example "Barbell squat".
-        request_id: Unique caller-generated ID used for idempotency.
-        sets: Number of sets.
-        reps: Number of reps per set.
-        weight: Weight used for the exercise.
-        duration_min: Optional total duration in minutes.
-        notes: Optional free-text notes.
+        entries: List of entries to log.
+        date: YYYY-MM-DD, defaults to today.
     """
-    return get_store().log_workout_entry(
-        user_id=require_user_id(),
-        event_at=event_at,
-        exercise=exercise,
-        request_id=request_id,
-        sets=sets,
-        reps=reps,
-        weight=weight,
-        duration_min=duration_min,
-        notes=notes,
-    )
-
-
-@mcp.tool(
-    meta={
-        "openai/outputTemplate": "ui://widget/workout-history.html",
-    }
-)
-def get_workout_history(
-    from_date: str | None = None,
-    to_date: str | None = None,
-    exercise: str | None = None,
-    limit: int = 50,
-) -> dict:
-    """Fetch workout history for the authenticated user.
-
-    Use this when the user asks about past workouts, workout history, or a date-based
-    workout query. Supports date range filtering plus optional exercise filtering.
-    """
-    result = get_store().get_workout_history(
-        user_id=require_user_id(),
-        from_date=from_date,
-        to_date=to_date,
-        exercise=exercise,
-        limit=limit,
-    )
-    return ToolResult(
-        content="Workout history ready.",
-        structured_content=result,
-    )
+    user_id = require_user_id()
+    try:
+        results = get_store().log_entries(
+            user_id=user_id,
+            entries=entries,
+            date_str=date,
+        )
+    except ValidationError as exc:
+        return {"error": str(exc)}
+    return {"logged": results}
 
 
 @mcp.tool
-def log_generic_event(event_type: str, payload: dict) -> dict:
-    """Log a flexible user event into the generic events table.
+def history(
+    date: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    type: str | None = None,
+    friend_id: str | None = None,
+) -> dict:
+    """Fetch entries for the authenticated user. Call before log() to
+    avoid duplicates. Response includes your_exercises: all exercise_keys
+    ever used — reuse these when logging.
 
-    Use this when the event is not a workout entry. Keep `event_type` short and stable.
-    Prefer values like `FOOD`, `RUN`, `SLEEP`, `MEASUREMENT`, or another concise category.
-    Put the actual details inside `payload` as a JSON object.
+    With no arguments: returns the last 7 days.
+    With friend_id: returns that friend's entries (must be connected).
+    Get friend IDs from friends(action="list").
+
+    Args:
+        date: Single date YYYY-MM-DD (shortcut for from_date=to_date).
+        from_date: Range start (inclusive).
+        to_date: Range end (inclusive).
+        type: "workout" or "meal". Omit for both.
+        friend_id: User ID of a friend. Omit for own data.
     """
-    return get_store().log_generic_event(
-        user_id=require_user_id(),
-        event_type=event_type,
-        payload=payload,
-    )
+    user_id = require_user_id()
+    try:
+        return get_store().get_history(
+            user_id=user_id,
+            date_str=date,
+            from_date_str=from_date,
+            to_date_str=to_date,
+            entry_type=type,
+            friend_id=friend_id,
+        )
+    except ValidationError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool
+def update(
+    entry_id: int,
+    data: dict,
+) -> dict:
+    """Replace the data of an existing entry. Send the COMPLETE data
+    object — not a partial patch. For meals the server recomputes totals.
+
+    Args:
+        entry_id: Row ID from history().
+        data: Full replacement data (same shape as log entries).
+    """
+    user_id = require_user_id()
+    try:
+        return get_store().update_entry(
+            user_id=user_id,
+            entry_id=entry_id,
+            data=data,
+        )
+    except ValidationError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool
+def friends(
+    action: str,
+    code: str | None = None,
+    display_name: str | None = None,
+) -> dict:
+    """Manage friend connections. Friends can see each other's data
+    through history(friend_id=...).
+
+    Actions:
+    - "list": Your friend code, active friends, and pending requests.
+    - "add": Send request using their code (e.g. "NEXUS-R3M8").
+    - "accept": Accept a pending request by display name.
+    - "reject": Reject a pending request by display name.
+    - "remove": Remove an active friend.
+
+    Args:
+        action: "list", "add", "accept", "reject", or "remove".
+        code: Friend code, required for "add".
+        display_name: Required for "accept", "reject", and "remove".
+    """
+    user_id = require_user_id()
+    try:
+        return get_store().manage_friends(
+            user_id=user_id,
+            action=action,
+            code=code,
+            display_name=display_name,
+        )
+    except ValidationError as exc:
+        return {"error": str(exc)}
+
+
+# -------------------------------------------------------------- Auth helper
 
 
 def require_user_id() -> str:
     access_token = get_access_token()
     if access_token is None:
-        raise PermissionError("Authentication is required.")
+        # For local dev without auth, use a default test user
+        return "test-user-1"
 
     user_id = str(access_token.claims.get("sub", "")).strip()
     if not user_id:
         raise PermissionError("Authenticated token is missing the subject claim.")
+
+    # Auto-create user row on first use
+    display_name = (
+        access_token.claims.get("name")
+        or access_token.claims.get("email", "")
+        or "Unknown"
+    )
+    get_store().ensure_user(user_id=user_id, display_name=display_name)
+
     return user_id
+
+
+# ----------------------------------------------------------- HTTP app setup
 
 
 def parse_args() -> argparse.Namespace:
@@ -450,6 +241,14 @@ def build_http_app(path: str):
     _add_mcp_alias_route(app, path)
     _add_protected_resource_alias_routes(app, path)
     return app
+
+
+def _normalize_path(value: str) -> str:
+    if not value.startswith("/"):
+        value = f"/{value}"
+    if not value.endswith("/"):
+        value = f"{value}/"
+    return value
 
 
 def _add_mcp_alias_route(app, path: str) -> None:
@@ -500,29 +299,18 @@ def _add_protected_resource_alias_routes(app, path: str) -> None:
     if canonical.endswith("/"):
         alias_paths.append(f"/.well-known/oauth-protected-resource{canonical}")
 
-    seen = {getattr(route, "path", None) for route in app.routes}
-    for alias_path in alias_paths:
-        if not alias_path or alias_path in seen:
+    for alias in alias_paths:
+        if any(getattr(route, "path", None) == alias for route in app.routes):
             continue
         app.router.routes.append(
-            Route(alias_path, endpoint=handler, methods=["GET"], include_in_schema=False)
+            Route(alias, endpoint=handler, methods=["GET"], include_in_schema=False)
         )
         app.router.routes.append(
-            Route(alias_path, endpoint=options_handler, methods=["OPTIONS"], include_in_schema=False)
+            Route(alias, endpoint=options_handler, methods=["OPTIONS"], include_in_schema=False)
         )
 
 
-def _normalize_path(path: str) -> str:
-    parsed = urlsplit(path)
-    clean_path = parsed.path or "/"
-    if not clean_path.startswith("/"):
-        clean_path = f"/{clean_path}"
-    if not clean_path.endswith("/"):
-        clean_path = f"{clean_path}/"
-    return clean_path
-
-
-def main() -> None:
+def main():
     args = parse_args()
     app = build_http_app(args.path)
     uvicorn.run(app, host=args.host, port=args.port)

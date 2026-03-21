@@ -11,8 +11,6 @@ class ConfigurationError(RuntimeError):
 @dataclass(frozen=True)
 class Settings:
     database_url: str | None
-    table_name: str
-    generic_events_table_name: str
     mcp_path: str
     host: str
     port: int
@@ -24,8 +22,6 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             database_url=os.getenv("NIPP_DATABASE_URL", os.getenv("DATABASE_URL")),
-            table_name=os.getenv("NIPP_TABLE_NAME", "workout_events"),
-            generic_events_table_name=os.getenv("NIPP_GENERIC_EVENTS_TABLE_NAME", "generic_events"),
             mcp_path=_normalize_path(os.getenv("NIPP_MCP_PATH", "/mcp/")),
             host=os.getenv("NIPP_HOST", "0.0.0.0"),
             port=int(os.getenv("PORT", os.getenv("NIPP_PORT", "8000"))),
