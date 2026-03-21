@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nipp"
-version = "0.1.0"
-description = "Minimal FastMCP workout logger backed by local Postgres."
+name = "nexus"
+version = "2.0.0"
+description = "Workout and nutrition tracker – MCP server for ChatGPT."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-nipp-mcp = "nipp.server:main"
+nexus-mcp = "nexus.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -1,1 +1,0 @@
-"""Nipp MCP server package."""

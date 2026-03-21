@@ -26,8 +26,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
-from nipp.config import Settings
-from nipp.db import get_pool
+from nexus.config import Settings
+from nexus.db import get_pool
 
 DEFAULT_AUTH_CODE_EXPIRY_SECONDS = 5 * 60
 DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60
@@ -40,7 +40,7 @@ ACCESS_TOKENS_TABLE = "oauth_access_tokens"
 REFRESH_TOKENS_TABLE = "oauth_refresh_tokens"
 
 
-class NippOAuthProvider(OAuthProvider):
+class NexusOAuthProvider(OAuthProvider):
     def __init__(self, settings: Settings):
         settings.validate()
         settings.validate_auth()

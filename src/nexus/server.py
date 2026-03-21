@@ -10,17 +10,17 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 import uvicorn
 
-from nipp.auth import NippOAuthProvider
-from nipp.config import Settings
-from nipp.models import ValidationError
-from nipp.storage import Store
+from nexus.auth import NexusOAuthProvider
+from nexus.config import Settings
+from nexus.models import ValidationError
+from nexus.storage import Store
 
 settings = Settings.from_env()
 auth = None
 if settings.base_url and settings.supabase_url and settings.supabase_publishable_key:
-    auth = NippOAuthProvider(settings)
+    auth = NexusOAuthProvider(settings)
 
-mcp = FastMCP("Nipp", auth=auth)
+mcp = FastMCP("Nexus – Workout and Nutrition Tracker", auth=auth)
 _store: Store | None = None
 
 
@@ -44,7 +44,7 @@ async def health(_: Request) -> PlainTextResponse:
 async def root(_: Request) -> JSONResponse:
     return JSONResponse(
         {
-            "name": "Nipp",
+            "name": "Nexus",
             "version": "2.0",
             "mcp_path": settings.mcp_path,
             "auth_enabled": auth is not None,

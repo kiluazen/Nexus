@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from nipp.models import (
+from nexus.models import (
     ValidationError,
     parse_date,
     validate_meal,

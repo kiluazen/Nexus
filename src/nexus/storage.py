@@ -8,9 +8,9 @@ import string
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from nipp.config import Settings
-from nipp.db import get_pool
-from nipp.models import ValidationError, parse_date, validate_meal, validate_workout
+from nexus.config import Settings
+from nexus.db import get_pool
+from nexus.models import ValidationError, parse_date, validate_meal, validate_workout
 
 
 class Store:

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from psycopg_pool import ConnectionPool
 
 if TYPE_CHECKING:
-    from nipp.config import Settings
+    from nexus.config import Settings
 
 logger = logging.getLogger(__name__)
 
