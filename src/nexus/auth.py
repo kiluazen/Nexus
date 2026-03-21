@@ -468,29 +468,47 @@ def _consent_html(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nipp Authorization</title>
+    <title>Nexus Authorization</title>
     <style>
       body { margin: 0; background: #f5f2ea; color: #171717; font-family: ui-sans-serif, system-ui, sans-serif; }
       main { max-width: 560px; margin: 4rem auto; padding: 2rem; background: #fffaf1; border: 1px solid #e7dcc6; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.06); }
       .muted { color: #5b564d; }
       .panel { background: #f6efe1; border-radius: 14px; padding: 1rem; margin: 1rem 0; }
       button { border: 0; border-radius: 999px; padding: .85rem 1.1rem; font-size: 1rem; cursor: pointer; }
-      button.primary { background: #111; color: #fff; }
+      button.primary { background: #111; color: #fff; width: 100%; }
       button.secondary { background: #e6dcc8; color: #111; }
       .actions { display: flex; gap: .75rem; margin-top: 1rem; }
       pre { white-space: pre-wrap; word-break: break-word; }
+      .divider { display: flex; align-items: center; gap: 1rem; margin: 1.25rem 0; color: #5b564d; font-size: .875rem; }
+      .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid #e7dcc6; }
+      .email-form { display: none; }
+      .email-form input { width: 100%; padding: .75rem 1rem; border: 1px solid #e7dcc6; border-radius: 12px; font-size: 1rem; background: #fff; box-sizing: border-box; outline: none; }
+      .email-form input:focus { border-color: #111; }
+      .email-form .fields { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
     <main>
-      <h1>Authorize Nipp</h1>
+      <h1>Authorize Nexus</h1>
       <p class="muted" id="status">Loading authorization request.</p>
       <div class="panel" id="details" hidden></div>
-      <div class="actions">
-        <button class="primary" id="login" hidden>Continue with Google</button>
-        <button class="primary" id="approve" hidden>Allow access</button>
-        <button class="secondary" id="deny" hidden>Deny</button>
+      <div class="actions" id="login-actions" hidden>
+        <div style="width:100%">
+          <button class="primary" id="login">Continue with Google</button>
+          <div class="divider">or</div>
+          <div class="email-form" id="email-form">
+            <div class="fields">
+              <input type="email" id="email-input" placeholder="Email" autocomplete="email" />
+              <input type="password" id="password-input" placeholder="Password" autocomplete="current-password" />
+            </div>
+            <button class="primary" id="email-login">Sign in with email</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions" id="approve-actions" hidden>
+        <button class="primary" id="approve">Allow access</button>
+        <button class="secondary" id="deny">Deny</button>
       </div>
       <pre id="error" hidden></pre>
     </main>
@@ -507,7 +525,13 @@ def _consent_html(
       const statusEl = document.getElementById("status");
       const detailsEl = document.getElementById("details");
       const errorEl = document.getElementById("error");
+      const loginActions = document.getElementById("login-actions");
       const loginButton = document.getElementById("login");
+      const emailForm = document.getElementById("email-form");
+      const emailInput = document.getElementById("email-input");
+      const passwordInput = document.getElementById("password-input");
+      const emailLoginButton = document.getElementById("email-login");
+      const approveActions = document.getElementById("approve-actions");
       const approveButton = document.getElementById("approve");
       const denyButton = document.getElementById("deny");
 
@@ -515,6 +539,12 @@ def _consent_html(
         statusEl.textContent = "Authorization could not be completed.";
         errorEl.hidden = false;
         errorEl.textContent = message;
+      }
+
+      function showApproveScreen() {
+        loginActions.hidden = true;
+        approveActions.hidden = false;
+        statusEl.textContent = "Review and approve the access request.";
       }
 
       async function loadPending() {
@@ -548,6 +578,29 @@ def _consent_html(
         if (error) setError(error.message);
       });
 
+      emailLoginButton.addEventListener("click", async () => {
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+        if (!email || !password) {
+          setError("Please enter both email and password.");
+          return;
+        }
+        emailLoginButton.textContent = "Signing in…";
+        emailLoginButton.disabled = true;
+        const { error } = await client.auth.signInWithPassword({ email, password });
+        if (error) {
+          emailLoginButton.textContent = "Sign in with email";
+          emailLoginButton.disabled = false;
+          setError(error.message);
+          return;
+        }
+        showApproveScreen();
+      });
+
+      passwordInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") emailLoginButton.click();
+      });
+
       approveButton.addEventListener("click", async () => {
         try { await decide("approve"); } catch (error) { setError(error.message || String(error)); }
       });
@@ -576,12 +629,11 @@ def _consent_html(
         detailsEl.hidden = false;
         if (!session) {
           statusEl.textContent = "Sign in to continue.";
-          loginButton.hidden = false;
+          loginActions.hidden = false;
+          emailForm.style.display = "block";
           return;
         }
-        statusEl.textContent = "Review and approve the access request.";
-        approveButton.hidden = false;
-        denyButton.hidden = false;
+        showApproveScreen();
       }
 
       init().catch((error) => setError(error instanceof Error ? error.message : String(error)));
@@ -611,7 +663,7 @@ def _callback_html(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nipp Sign In</title>
+    <title>Nexus Sign In</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>

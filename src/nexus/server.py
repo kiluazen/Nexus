@@ -232,7 +232,7 @@ def require_user_id() -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the Nipp MCP server.")
+    parser = argparse.ArgumentParser(description="Run the Nexus MCP server.")
     parser.add_argument("--host", default=settings.host)
     parser.add_argument("--port", type=int, default=settings.port)
     parser.add_argument("--path", default=settings.mcp_path)
