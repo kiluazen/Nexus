@@ -1,0 +1,29 @@
+{
+    "meal": "lunch",
+    "fat_g": 27,
+    "items": [
+      {
+        "name": "chapati",
+        "calories": 220,
+        "quantity": 2
+      },
+      {
+        "name": "egg bhurji",
+        "calories": 235,
+        "eggs_equivalent": 2.7
+      },
+      {
+        "name": "chicken leg curry",
+        "calories": 150,
+        "quantity": 1
+      },
+      {
+        "name": "salad",
+        "calories": 20
+      }
+    ],
+    "notes": "Lunch from photo: 2 chapatis, ~2/3 portion egg bhurji from 4 eggs, 1 chicken leg curry, small salad",
+    "carbs_g": 45,
+    "protein_g": 43,
+    "estimated_total_calories": 625
+  }
