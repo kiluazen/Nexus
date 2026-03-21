@@ -63,8 +63,9 @@ def log(
 ) -> dict:
     """Store workout and/or meal entries for the authenticated user.
 
-    Before calling this, call history() for the target date first. If an
-    exercise already exists that day, use update() instead — don't duplicate.
+    Log immediately when the user tells you about a workout or meal.
+    If you already fetched history() for this date in this conversation
+    and an exercise is already logged, use update() instead of duplicating.
 
     Workout shape:
       {"type": "workout", "exercise": "Dumbbell Bench Press",
@@ -81,7 +82,8 @@ def log(
 
     exercise_key: lowercase_with_underscores, shortest unambiguous name.
     MUST reuse keys from your_exercises in history(). For new exercises,
-    confirm the name and key, by searching the web or asking the human.
+    just pick a sensible key and log it immediately — do NOT ask for
+    confirmation. The user can correct later with update().
 
     Meals: estimate macros PER ITEM, not for the whole meal. Every item
     must have name, quantity, calories, protein_g, carbs_g, fat_g. The
