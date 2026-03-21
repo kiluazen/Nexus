@@ -31,6 +31,11 @@ def get_store() -> Store:
     return _store
 
 
+@mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
+async def openai_domain_verify(_: Request) -> PlainTextResponse:
+    return PlainTextResponse("p7WC1Y8Ev8u7vcTTDqzMy7RAZo5YtbfLifniIRJKXe8")
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> PlainTextResponse:
     try:
