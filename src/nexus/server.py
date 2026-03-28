@@ -240,8 +240,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_http_app(path: str):
+    # Strip trailing slash so fastmcp generates a resource URL without it
+    # (e.g. ".../mcp" not ".../mcp/"). Clients do strict matching.
+    http_path = path.rstrip("/") or path
     app = mcp.http_app(
-        path=path,
+        path=http_path,
         transport="http",
         stateless_http=True,
     )
@@ -284,11 +287,10 @@ def _add_protected_resource_alias_routes(app, path: str) -> None:
         return
 
     canonical = _normalize_path(path)
-    resource = f"{settings.base_url}{canonical}"
     path_without_trailing = canonical[:-1] if canonical.endswith("/") else canonical
 
     payload = {
-        "resource": resource,
+        "resource": f"{settings.base_url}{path_without_trailing}",
         "authorization_servers": [settings.base_url],
         "scopes_supported": ["openid", "profile", "email"],
     }
