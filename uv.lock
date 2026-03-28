@@ -636,8 +636,8 @@ wheels = [
 ]
 
 [[package]]
-name = "nipp"
-version = "0.1.0"
+name = "nexus"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
+nexus = "nexus.cli:main"
 nexus-mcp = "nexus.server:main"
 
 [tool.setuptools]

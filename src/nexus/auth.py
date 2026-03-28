@@ -287,6 +287,17 @@ class NexusOAuthProvider(OAuthProvider):
         key = token.token
         self._delete_row(table_name, key_column="token", key=key)
 
+    async def verify_bearer_token(self, token: str) -> tuple[dict[str, Any], str] | None:
+        access_token = await self.load_access_token(token)
+        if access_token is not None:
+            return dict(access_token.claims), "nexus"
+
+        verified = await self._supabase_verifier.verify_token(token)
+        if verified is not None:
+            return dict(verified.claims), "supabase"
+
+        return None
+
     async def consent_page(self, request: Request) -> HTMLResponse:
         pending_id = request.query_params.get("pending_id", "")
         return HTMLResponse(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from urllib.parse import urlsplit
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 import uvicorn
 
+from nexus.app import NexusApp, UserContext, handle_validation_error
 from nexus.auth import NexusOAuthProvider
 from nexus.config import Settings
 from nexus.models import ValidationError
@@ -22,6 +23,7 @@ if settings.base_url and settings.supabase_url and settings.supabase_publishable
 
 mcp = FastMCP("Nexus – Workout and Nutrition Tracker", auth=auth)
 _store: Store | None = None
+_app: NexusApp | None = None
 
 
 def get_store() -> Store:
@@ -29,6 +31,13 @@ def get_store() -> Store:
     if _store is None:
         _store = Store(settings)
     return _store
+
+
+def get_app() -> NexusApp:
+    global _app
+    if _app is None:
+        _app = NexusApp(get_store())
+    return _app
 
 
 @mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
@@ -99,16 +108,15 @@ def log(
         entries: List of entries to log.
         date: YYYY-MM-DD, defaults to today.
     """
-    user_id = require_user_id()
+    user = require_mcp_user()
     try:
-        results = get_store().log_entries(
-            user_id=user_id,
+        return get_app().log_entries(
+            user=user,
             entries=entries,
-            date_str=date,
+            date=date,
         )
     except ValidationError as exc:
-        return {"error": str(exc)}
-    return {"logged": results}
+        return handle_validation_error(exc)
 
 
 @mcp.tool
@@ -134,18 +142,18 @@ def history(
         type: "workout" or "meal". Omit for both.
         friend_id: User ID of a friend. Omit for own data.
     """
-    user_id = require_user_id()
+    user = require_mcp_user()
     try:
-        return get_store().get_history(
-            user_id=user_id,
-            date_str=date,
-            from_date_str=from_date,
-            to_date_str=to_date,
+        return get_app().get_history(
+            user=user,
+            date=date,
+            from_date=from_date,
+            to_date=to_date,
             entry_type=type,
             friend_id=friend_id,
         )
     except ValidationError as exc:
-        return {"error": str(exc)}
+        return handle_validation_error(exc)
 
 
 @mcp.tool
@@ -160,15 +168,15 @@ def update(
         entry_id: Row ID from history().
         data: Full replacement data (same shape as log entries).
     """
-    user_id = require_user_id()
+    user = require_mcp_user()
     try:
-        return get_store().update_entry(
-            user_id=user_id,
+        return get_app().update_entry(
+            user=user,
             entry_id=entry_id,
             data=data,
         )
     except ValidationError as exc:
-        return {"error": str(exc)}
+        return handle_validation_error(exc)
 
 
 @mcp.tool
@@ -192,40 +200,217 @@ def friends(
         code: Friend code, required for "add".
         display_name: Required for "accept", "reject", and "remove".
     """
-    user_id = require_user_id()
+    user = require_mcp_user()
     try:
-        return get_store().manage_friends(
-            user_id=user_id,
+        return get_app().manage_friends(
+            user=user,
             action=action,
             code=code,
             display_name=display_name,
         )
     except ValidationError as exc:
-        return {"error": str(exc)}
+        return handle_validation_error(exc)
 
 
 # -------------------------------------------------------------- Auth helper
 
 
-def require_user_id() -> str:
+def require_mcp_user() -> UserContext:
     access_token = get_access_token()
     if access_token is None:
         # For local dev without auth, use a default test user
-        return "test-user-1"
+        return UserContext(user_id="test-user-1", display_name="Local Test User")
 
     user_id = str(access_token.claims.get("sub", "")).strip()
     if not user_id:
         raise PermissionError("Authenticated token is missing the subject claim.")
 
-    # Auto-create user row on first use
-    display_name = (
-        access_token.claims.get("name")
-        or access_token.claims.get("email", "")
+    return UserContext(
+        user_id=user_id,
+        display_name=_display_name_from_claims(access_token.claims),
+    )
+
+
+async def api_me(request: Request) -> JSONResponse:
+    try:
+        user = await require_http_user(request)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    return JSONResponse(
+        {
+            "user_id": user.user_id,
+            "display_name": user.display_name,
+            "auth_enabled": auth is not None,
+        }
+    )
+
+
+async def api_auth_config(_: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "auth_enabled": auth is not None,
+            "supabase_url": settings.supabase_url,
+            "supabase_publishable_key": settings.supabase_publishable_key,
+        }
+    )
+
+
+async def api_log(request: Request) -> JSONResponse:
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+    try:
+        user = await require_http_user(request)
+        payload = get_app().log_entries(
+            user=user,
+            entries=_expect_list(body.get("entries"), field_name="entries"),
+            date=_optional_str(body.get("date")),
+        )
+        return JSONResponse(payload)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    except ValidationError as exc:
+        return JSONResponse(handle_validation_error(exc), status_code=400)
+
+
+async def api_history(request: Request) -> JSONResponse:
+    try:
+        user = await require_http_user(request)
+        payload = get_app().get_history(
+            user=user,
+            date=_query_param(request, "date"),
+            from_date=_query_param(request, "from_date"),
+            to_date=_query_param(request, "to_date"),
+            entry_type=_query_param(request, "type"),
+            friend_id=_query_param(request, "friend_id"),
+        )
+        return JSONResponse(payload)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    except ValidationError as exc:
+        return JSONResponse(handle_validation_error(exc), status_code=400)
+
+
+async def api_update(request: Request) -> JSONResponse:
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+    try:
+        user = await require_http_user(request)
+        payload = get_app().update_entry(
+            user=user,
+            entry_id=_expect_int(body.get("entry_id"), field_name="entry_id"),
+            data=_expect_dict(body.get("data"), field_name="data"),
+        )
+        return JSONResponse(payload)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    except ValidationError as exc:
+        return JSONResponse(handle_validation_error(exc), status_code=400)
+
+
+async def api_friends(request: Request) -> JSONResponse:
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+    try:
+        user = await require_http_user(request)
+        payload = get_app().manage_friends(
+            user=user,
+            action=_expect_str(body.get("action"), field_name="action"),
+            code=_optional_str(body.get("code")),
+            display_name=_optional_str(body.get("display_name")),
+        )
+        return JSONResponse(payload)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    except ValidationError as exc:
+        return JSONResponse(handle_validation_error(exc), status_code=400)
+
+
+async def require_http_user(request: Request) -> UserContext:
+    if auth is None:
+        return UserContext(user_id="test-user-1", display_name="Local Test User")
+
+    bearer = request.headers.get("authorization", "")
+    if not bearer.lower().startswith("bearer "):
+        raise PermissionError("Missing bearer token.")
+
+    token = bearer.split(" ", 1)[1].strip()
+    if not token:
+        raise PermissionError("Missing bearer token.")
+
+    verified = await auth.verify_bearer_token(token)
+    if verified is None:
+        raise PermissionError("Bearer token is invalid.")
+
+    claims, _issuer = verified
+    user_id = str(claims.get("sub", "")).strip()
+    if not user_id:
+        raise PermissionError("Authenticated token is missing the subject claim.")
+
+    return UserContext(
+        user_id=user_id,
+        display_name=_display_name_from_claims(claims),
+    )
+
+
+def _display_name_from_claims(claims: dict[str, Any]) -> str:
+    return str(
+        claims.get("name")
+        or claims.get("preferred_username")
+        or claims.get("email")
         or "Unknown"
     )
-    get_store().ensure_user(user_id=user_id, display_name=display_name)
 
-    return user_id
+
+async def _parse_json_body(request: Request) -> dict[str, Any] | JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Request body must be valid JSON."}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "Request body must be a JSON object."}, status_code=400)
+    return body
+
+
+def _query_param(request: Request, name: str) -> str | None:
+    value = request.query_params.get(name)
+    return value.strip() if value and value.strip() else None
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValidationError("Expected a string value.")
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _expect_str(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(f"{field_name} is required and must be a string.")
+    return value.strip()
+
+
+def _expect_int(value: Any, *, field_name: str) -> int:
+    if not isinstance(value, int):
+        raise ValidationError(f"{field_name} is required and must be an integer.")
+    return value
+
+
+def _expect_dict(value: Any, *, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValidationError(f"{field_name} is required and must be a JSON object.")
+    return value
+
+
+def _expect_list(value: Any, *, field_name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValidationError(f"{field_name} is required and must be a JSON array.")
+    return value
 
 
 # ----------------------------------------------------------- HTTP app setup
@@ -248,6 +433,7 @@ def build_http_app(path: str):
         transport="http",
         stateless_http=True,
     )
+    _add_api_routes(app)
     _add_mcp_alias_route(app, path)
     _add_protected_resource_alias_routes(app, path)
     return app
@@ -280,6 +466,21 @@ def _add_mcp_alias_route(app, path: str) -> None:
             include_in_schema=False,
         )
     )
+
+
+def _add_api_routes(app) -> None:
+    routes = [
+        Route("/api/v1/auth/config", endpoint=api_auth_config, methods=["GET"], include_in_schema=False),
+        Route("/api/v1/me", endpoint=api_me, methods=["GET"], include_in_schema=False),
+        Route("/api/v1/log", endpoint=api_log, methods=["POST"], include_in_schema=False),
+        Route("/api/v1/history", endpoint=api_history, methods=["GET"], include_in_schema=False),
+        Route("/api/v1/update", endpoint=api_update, methods=["POST"], include_in_schema=False),
+        Route("/api/v1/friends", endpoint=api_friends, methods=["POST"], include_in_schema=False),
+    ]
+    existing_paths = {getattr(route, "path", None) for route in app.routes}
+    for route in routes:
+        if route.path not in existing_paths:
+            app.router.routes.append(route)
 
 
 def _add_protected_resource_alias_routes(app, path: str) -> None:
