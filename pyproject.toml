@@ -3,12 +3,29 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nexus"
+name = "nexus-fitness"
 version = "2.0.0"
-description = "Workout and nutrition tracker – MCP server for ChatGPT."
+description = "Track workouts and nutrition from your terminal. CLI + MCP server for AI agents."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
+license = "MIT"
+authors = [
+  {name = "Kushal SM"},
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/kiluazen/Nexus"
+Repository = "https://github.com/kiluazen/Nexus"
+
+[project.optional-dependencies]
+server = [
   "fastmcp<3",
   "psycopg[binary]>=3.2.0",
   "psycopg_pool>=3.2.0",
