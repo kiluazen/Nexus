@@ -23,10 +23,10 @@ class ResolveBaseUrlTests(unittest.TestCase):
         with mock.patch("nexus.cli.load_saved_credentials", return_value=creds):
             self.assertEqual("https://saved.example.com", resolve_base_url())
 
-    def test_raises_when_missing(self) -> None:
+    def test_falls_back_to_default(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(CliError):
-                resolve_base_url(allow_saved=False)
+            from nexus.cli import DEFAULT_BASE_URL
+            self.assertEqual(DEFAULT_BASE_URL, resolve_base_url(allow_saved=False))
 
     def test_strips_trailing_slash(self) -> None:
         self.assertEqual("https://api.example.com", resolve_base_url(explicit="https://api.example.com/"))

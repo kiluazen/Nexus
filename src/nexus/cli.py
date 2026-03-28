@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
+DEFAULT_BASE_URL = "https://nexus-53227342417.asia-south1.run.app"
 CONFIG_DIR = Path.home() / ".config" / "nexus"
 CREDENTIALS_PATH = CONFIG_DIR / "credentials.json"
 
@@ -43,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nexus",
         description="Nexus – track workouts and nutrition from your terminal.",
     )
-    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.2")
+    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.3")
     subparsers = parser.add_subparsers(dest="command")
 
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
@@ -497,7 +498,7 @@ def resolve_base_url(*, explicit: str | None = None, allow_saved: bool = True) -
     if not base_url and allow_saved:
         base_url = _cred_str(load_saved_credentials(), "base_url")
     if not base_url:
-        raise CliError("Set NEXUS_API_BASE_URL or pass --base-url.")
+        base_url = DEFAULT_BASE_URL
     return base_url.rstrip("/")
 
 
