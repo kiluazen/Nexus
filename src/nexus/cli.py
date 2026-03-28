@@ -118,11 +118,10 @@ def handle_auth_login(args: argparse.Namespace) -> None:
     if not supabase_url or not publishable_key:
         raise CliError("Server did not return valid Supabase auth configuration.")
 
-    # PKCE challenge + OAuth state for CSRF protection
+    # PKCE challenge (provides CSRF protection via code_verifier binding)
     code_verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    oauth_state = secrets.token_urlsafe(32)
 
     # Find a free port and start a temporary callback server.
     # Use 127.0.0.1 (not localhost) in both the bind address and redirect URL
@@ -135,15 +134,6 @@ def handle_auth_login(args: argparse.Namespace) -> None:
         def do_GET(self) -> None:
             parsed = parse.urlparse(self.path)
             params = parse.parse_qs(parsed.query)
-
-            returned_state = (params.get("state") or [None])[0]
-            if returned_state != oauth_state:
-                self.send_response(400)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"<h1>Invalid state. Sign-in rejected.</h1>")
-                return
-
             auth_code[0] = (params.get("code") or [None])[0]
 
             self.send_response(200)
@@ -170,7 +160,6 @@ def handle_auth_login(args: argparse.Namespace) -> None:
                 "redirect_to": callback_url,
                 "code_challenge": code_challenge,
                 "code_challenge_method": "S256",
-                "state": oauth_state,
             }
         )
     )
