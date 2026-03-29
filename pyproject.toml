@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-fitness"
-version = "2.0.3"
+version = "2.0.4"
 description = "Track workouts and nutrition from your terminal. CLI + MCP server for AI agents."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
   {name = "Kushal SM"},

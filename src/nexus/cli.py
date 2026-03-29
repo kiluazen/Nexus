@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nexus",
         description="Nexus – track workouts and nutrition from your terminal.",
     )
-    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.3")
+    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.4")
     subparsers = parser.add_subparsers(dest="command")
 
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
