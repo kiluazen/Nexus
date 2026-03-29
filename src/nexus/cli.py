@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nexus",
         description="Nexus – track workouts and nutrition from your terminal.",
     )
-    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.4")
+    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.5")
     subparsers = parser.add_subparsers(dest="command")
 
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
@@ -145,9 +145,9 @@ def handle_auth_login(args: argparse.Namespace) -> None:
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             if auth_code[0]:
-                self.wfile.write(b"<h1>Signed in. You can close this tab.</h1>")
+                self.wfile.write(_callback_html("Signed in", "You can close this tab and return to your terminal."))
             else:
-                self.wfile.write(b"<h1>Sign-in failed. Check the terminal.</h1>")
+                self.wfile.write(_callback_html("Sign-in failed", "Check your terminal for details."))
 
         def log_message(self, format: str, *log_args: Any) -> None:
             pass  # silence request logs
@@ -536,6 +536,29 @@ def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _callback_html(title: str, message: str) -> bytes:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Nexus – {title}</title>
+<style>
+  body {{ margin:0; background:#f5f2ea; color:#525051; font-family:ui-sans-serif,system-ui,sans-serif; }}
+  main {{ max-width:480px; margin:6rem auto; padding:2rem; text-align:center; }}
+  h1 {{ font-size:2.2rem; font-weight:700; margin-bottom:.5rem; }}
+  p {{ font-size:1.1rem; color:#9B9692; }}
+</style>
+</head>
+<body>
+<main>
+  <h1>{title}</h1>
+  <p>{message}</p>
+</main>
+</body>
+</html>""".encode("utf-8")
 
 
 def print_json(payload: dict[str, Any]) -> None:
