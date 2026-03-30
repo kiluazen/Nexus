@@ -425,11 +425,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_http_app(path: str):
-    # Strip trailing slash so fastmcp generates a resource URL without it
-    # (e.g. ".../mcp" not ".../mcp/"). Clients do strict matching.
-    http_path = path.rstrip("/") or path
     app = mcp.http_app(
-        path=http_path,
+        path=path,
         transport="http",
         stateless_http=True,
     )
