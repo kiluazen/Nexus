@@ -10,7 +10,7 @@ from typing import Any
 
 from nexus.config import Settings
 from nexus.db import get_pool
-from nexus.models import ValidationError, parse_date, validate_meal, validate_workout
+from nexus.models import ValidationError, parse_date, validate_meal, validate_weight, validate_workout
 
 
 class Store:
@@ -49,8 +49,10 @@ class Store:
                 results.append(self._insert_workout(user_id, entry_date, entry))
             elif entry_type == "meal":
                 results.append(self._insert_meal(user_id, entry_date, entry))
+            elif entry_type == "weight":
+                results.append(self._insert_weight(user_id, entry_date, entry))
             else:
-                raise ValidationError(f"Unknown entry type: {entry_type!r}. Must be 'workout' or 'meal'.")
+                raise ValidationError(f"Unknown entry type: {entry_type!r}. Must be 'workout', 'meal', or 'weight'.")
         return results
 
     def _insert_workout(self, user_id: str, entry_date: date, entry: dict) -> dict:
@@ -110,6 +112,30 @@ class Store:
             "items_count": len(data["items"]),
         }
 
+    def _insert_weight(self, user_id: str, entry_date: date, entry: dict) -> dict:
+        data = {k: v for k, v in entry.items() if k != "type"}
+        data = validate_weight(data)
+
+        pool = get_pool(self._settings)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO entries (user_id, entry_type, date, exercise_key, data)
+                    VALUES (%s, 'weight', %s, NULL, %s::jsonb)
+                    RETURNING id
+                    """,
+                    (user_id, entry_date, json.dumps(data)),
+                )
+                row_id = cur.fetchone()[0]
+            conn.commit()
+
+        return {
+            "id": row_id,
+            "entry_type": "weight",
+            "weight_kg": data["weight_kg"],
+        }
+
     # -------------------------------------------------------------- history
     def get_history(
         self,
@@ -144,8 +170,8 @@ class Store:
         params: list[Any] = [query_user_id, from_date, to_date]
 
         if entry_type:
-            if entry_type not in ("workout", "meal"):
-                raise ValidationError("type must be 'workout' or 'meal'.")
+            if entry_type not in ("workout", "meal", "weight"):
+                raise ValidationError("type must be 'workout', 'meal', or 'weight'.")
             clauses.append("entry_type = %s")
             params.append(entry_type)
 
@@ -192,6 +218,7 @@ class Store:
 
         workouts = []
         meals = []
+        weights = []
         for row_id, etype, edate, ekey, data_text in rows:
             data = json.loads(data_text)
             if etype == "workout":
@@ -209,6 +236,10 @@ class Store:
                 if data.get("notes"):
                     entry_out["notes"] = data["notes"]
                 meals.append(entry_out)
+            elif etype == "weight":
+                entry_out = {"id": row_id, "date": edate.isoformat()}
+                entry_out.update(data)
+                weights.append(entry_out)
 
         # Compute day_totals only for single-day queries
         single_day = from_date == to_date
@@ -216,6 +247,7 @@ class Store:
             "period": {"from": from_date.isoformat(), "to": to_date.isoformat()},
             "workouts": workouts,
             "meals": meals,
+            "weights": weights,
         }
 
         if not friend_id:
@@ -276,6 +308,9 @@ class Store:
                 elif entry_type == "meal":
                     data = validate_meal(data)  # recomputes totals
                     new_exercise_key = None
+                elif entry_type == "weight":
+                    data = validate_weight(data)
+                    new_exercise_key = None
                 else:
                     raise ValidationError(f"Cannot update entry of type: {entry_type}")
 
@@ -306,6 +341,8 @@ class Store:
         elif entry_type == "meal":
             result["totals"] = data["totals"]
             result["items_count"] = len(data.get("items", []))
+        elif entry_type == "weight":
+            result["weight_kg"] = data["weight_kg"]
 
         return result
 

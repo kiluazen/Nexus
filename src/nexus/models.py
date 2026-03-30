@@ -16,6 +16,10 @@ SET_KEYS = {"weight_kg", "reps"}
 MEAL_TOP_KEYS = {"meal_type", "items", "totals", "notes"}
 MEAL_ITEM_REQUIRED = {"name", "quantity", "calories", "protein_g", "carbs_g", "fat_g"}
 
+# --- Weight validation ---
+
+WEIGHT_KEYS = {"weight_kg", "notes"}
+
 
 class ValidationError(ValueError):
     pass
@@ -103,6 +107,24 @@ def validate_meal(data: dict) -> dict:
     totals = {k: round(v, 1) for k, v in totals.items()}
 
     data["totals"] = totals
+    return data
+
+
+def validate_weight(data: dict) -> dict:
+    """Validate a weight entry's data dict."""
+    if not isinstance(data, dict):
+        raise ValidationError("Weight data must be a dict.")
+
+    unknown = set(data.keys()) - WEIGHT_KEYS
+    if unknown:
+        raise ValidationError(f"Unknown weight keys: {unknown}")
+
+    weight_kg = data.get("weight_kg")
+    if weight_kg is None:
+        raise ValidationError("weight_kg is required.")
+    if not isinstance(weight_kg, (int, float)) or weight_kg <= 0:
+        raise ValidationError("weight_kg must be a positive number.")
+
     return data
 
 

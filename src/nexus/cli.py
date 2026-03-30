@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     history_parser.add_argument("--date")
     history_parser.add_argument("--from-date")
     history_parser.add_argument("--to-date")
-    history_parser.add_argument("--type", choices=["workout", "meal"])
+    history_parser.add_argument("--type", choices=["workout", "meal", "weight"])
     history_parser.add_argument("--friend-id")
     history_parser.set_defaults(handler=handle_history)
 

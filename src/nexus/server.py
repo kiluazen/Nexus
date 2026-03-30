@@ -93,6 +93,8 @@ def log(
       {"type": "meal", "meal_type": "lunch",
        "items": [{"name": "chapati", "quantity": 2, "calories": 220,
                   "protein_g": 6, "carbs_g": 40, "fat_g": 4}, ...]}
+    Weight shape:
+      {"type": "weight", "weight_kg": 72.5, "notes": "morning, fasted"}
 
     exercise_key: lowercase_with_underscores, shortest unambiguous name.
     MUST reuse keys from your_exercises in history(). For new exercises,
@@ -139,7 +141,7 @@ def history(
         date: Single date YYYY-MM-DD (shortcut for from_date=to_date).
         from_date: Range start (inclusive).
         to_date: Range end (inclusive).
-        type: "workout" or "meal". Omit for both.
+        type: "workout", "meal", or "weight". Omit for all.
         friend_id: User ID of a friend. Omit for own data.
     """
     user = require_mcp_user()
