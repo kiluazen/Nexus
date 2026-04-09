@@ -627,6 +627,7 @@ def _consent_html(
         if (!response.ok) throw new Error(payload.error || response.statusText);
         statusEl.innerHTML = '<span class="spinner"></span>Redirecting...';
         window.location.assign(payload.redirect_to);
+        setTimeout(() => window.close(), 1000);
       }
 
       loginButton.addEventListener("click", async () => {
@@ -792,6 +793,7 @@ def _callback_html(
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || response.statusText);
         window.location.assign(payload.redirect_to);
+        setTimeout(() => window.close(), 1000);
       }
       init().catch((error) => {
         document.getElementById("status").textContent = "Something went wrong.";
