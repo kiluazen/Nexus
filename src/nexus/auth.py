@@ -479,50 +479,111 @@ def _consent_html(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nexus Authorization</title>
+    <title>Nexus – Sign in</title>
     <style>
-      body { margin: 0; background: #f5f2ea; color: #171717; font-family: ui-sans-serif, system-ui, sans-serif; }
-      main { max-width: 560px; margin: 4rem auto; padding: 2rem; background: #fffaf1; border: 1px solid #e7dcc6; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.06); }
-      .muted { color: #5b564d; }
-      .panel { background: #f6efe1; border-radius: 14px; padding: 1rem; margin: 1rem 0; }
-      button { border: 0; border-radius: 999px; padding: .85rem 1.1rem; font-size: 1rem; cursor: pointer; }
-      button.primary { background: #111; color: #fff; width: 100%; }
-      button.secondary { background: #e6dcc8; color: #111; }
-      .actions { display: flex; gap: .75rem; margin-top: 1rem; }
-      pre { white-space: pre-wrap; word-break: break-word; }
-      .divider { display: flex; align-items: center; gap: 1rem; margin: 1.25rem 0; color: #5b564d; font-size: .875rem; }
-      .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid #e7dcc6; }
-      .email-form { display: none; }
-      .email-form input { width: 100%; padding: .75rem 1rem; border: 1px solid #e7dcc6; border-radius: 12px; font-size: 1rem; background: #fff; box-sizing: border-box; outline: none; }
-      .email-form input:focus { border-color: #111; }
-      .email-form .fields { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
+      *{ margin:0; padding:0; box-sizing:border-box; }
+      body {
+        background:#f5f2ea;
+        color:#525051;
+        font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        position:relative;
+        overflow:hidden;
+      }
+      .bg-img {
+        position:fixed;
+        top:50%;
+        left:50%;
+        transform:translate(-50%,-50%);
+        width:min(500px,80vw);
+        border-radius:18px;
+        opacity:0.12;
+        pointer-events:none;
+        z-index:0;
+      }
+      main {
+        position:relative;
+        z-index:1;
+        text-align:center;
+        padding:2rem;
+        max-width:400px;
+      }
+      h1 {
+        font-size:2.4rem;
+        font-weight:700;
+        margin-bottom:0.6rem;
+        color:#3a3838;
+      }
+      p {
+        font-size:1.15rem;
+        color:#9B9692;
+        line-height:1.5;
+        margin-bottom:1.5rem;
+      }
+      button { border:0; border-radius:999px; padding:.85rem 1.1rem; font-size:1rem; cursor:pointer; width:100%; }
+      button.primary { background:#111; color:#fff; }
+      button.primary:hover { background:#333; }
+      button.primary:disabled { background:#999; cursor:wait; }
+      .divider { display:flex; align-items:center; gap:1rem; margin:1.25rem 0; color:#9B9692; font-size:.875rem; }
+      .divider::before, .divider::after { content:""; flex:1; border-top:1px solid #e7dcc6; }
+      .email-form { display:none; }
+      .email-form input { width:100%; padding:.75rem 1rem; border:1px solid #e7dcc6; border-radius:12px; font-size:1rem; background:#fff; box-sizing:border-box; outline:none; }
+      .email-form input:focus { border-color:#111; }
+      .email-form .fields { display:flex; flex-direction:column; gap:.75rem; margin-bottom:1rem; }
+      pre { white-space:pre-wrap; word-break:break-word; color:#c44; margin-top:1rem; font-size:.9rem; }
+      .spinner { display:inline-block; width:18px; height:18px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:8px; }
+      @keyframes spin { to { transform:rotate(360deg); } }
+      footer {
+        position:fixed;
+        bottom:2rem;
+        z-index:1;
+        text-align:center;
+      }
+      footer a {
+        color:#9B9692;
+        text-decoration:none;
+        font-size:0.95rem;
+        transition:color 0.2s;
+      }
+      footer a:hover { color:#525051; }
+      footer a svg {
+        width:20px;
+        height:20px;
+        vertical-align:middle;
+        margin-right:6px;
+        fill:currentColor;
+      }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
+    <img class="bg-img" src="https://kushalsm.com/playground_pic.png" alt="" />
     <main>
-      <h1>Authorize Nexus</h1>
-      <p class="muted" id="status">Loading authorization request.</p>
-      <div class="panel" id="details" hidden></div>
-      <div class="actions" id="login-actions" hidden>
-        <div style="width:100%">
-          <button class="primary" id="login">Continue with Google</button>
-          <div class="divider">or</div>
-          <div class="email-form" id="email-form">
-            <div class="fields">
-              <input type="email" id="email-input" placeholder="Email" autocomplete="email" />
-              <input type="password" id="password-input" placeholder="Password" autocomplete="current-password" />
-            </div>
-            <button class="primary" id="email-login">Sign in with email</button>
+      <h1>Nexus</h1>
+      <p id="status">Loading...</p>
+      <div id="login-actions" hidden>
+        <button class="primary" id="login">Continue with Google</button>
+        <div class="divider">or</div>
+        <div class="email-form" id="email-form">
+          <div class="fields">
+            <input type="email" id="email-input" placeholder="Email" autocomplete="email" />
+            <input type="password" id="password-input" placeholder="Password" autocomplete="current-password" />
           </div>
+          <button class="primary" id="email-login">Sign in with email</button>
         </div>
-      </div>
-      <div class="actions" id="approve-actions" hidden>
-        <button class="primary" id="approve">Allow access</button>
-        <button class="secondary" id="deny">Deny</button>
       </div>
       <pre id="error" hidden></pre>
     </main>
+    <footer>
+      <a href="https://twitter.com/KushalSM5" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        @KushalSM5
+      </a>
+    </footer>
     <script>
       const config = __CONFIG__;
       const client = window.supabase.createClient(config.supabaseUrl, config.publishableKey, {
@@ -534,7 +595,6 @@ def _consent_html(
         }
       });
       const statusEl = document.getElementById("status");
-      const detailsEl = document.getElementById("details");
       const errorEl = document.getElementById("error");
       const loginActions = document.getElementById("login-actions");
       const loginButton = document.getElementById("login");
@@ -542,41 +602,30 @@ def _consent_html(
       const emailInput = document.getElementById("email-input");
       const passwordInput = document.getElementById("password-input");
       const emailLoginButton = document.getElementById("email-login");
-      const approveActions = document.getElementById("approve-actions");
-      const approveButton = document.getElementById("approve");
-      const denyButton = document.getElementById("deny");
 
       function setError(message) {
-        statusEl.textContent = "Authorization could not be completed.";
+        statusEl.textContent = "Something went wrong.";
         errorEl.hidden = false;
         errorEl.textContent = message;
       }
 
-      function showApproveScreen() {
+      async function autoApprove() {
+        statusEl.innerHTML = '<span class="spinner"></span>Connecting...';
         loginActions.hidden = true;
-        approveActions.hidden = false;
-        statusEl.textContent = "Review and approve the access request.";
-      }
-
-      async function loadPending() {
-        const response = await fetch(`${config.baseUrl}/oauth/pending?pending_id=${encodeURIComponent(config.pendingId)}`);
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-      }
-
-      async function decide(action) {
         const { data } = await client.auth.getSession();
         const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("No session found.");
         const response = await fetch(`${config.baseUrl}/oauth/decision`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {})
+            authorization: `Bearer ${accessToken}`
           },
-          body: JSON.stringify({ pending_id: config.pendingId, action })
+          body: JSON.stringify({ pending_id: config.pendingId, action: "approve" })
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || response.statusText);
+        statusEl.innerHTML = '<span class="spinner"></span>Redirecting...';
         window.location.assign(payload.redirect_to);
       }
 
@@ -596,7 +645,7 @@ def _consent_html(
           setError("Please enter both email and password.");
           return;
         }
-        emailLoginButton.textContent = "Signing in…";
+        emailLoginButton.textContent = "Signing in\u2026";
         emailLoginButton.disabled = true;
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) {
@@ -605,18 +654,11 @@ def _consent_html(
           setError(error.message);
           return;
         }
-        showApproveScreen();
+        try { await autoApprove(); } catch (err) { setError(err.message || String(err)); }
       });
 
       passwordInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") emailLoginButton.click();
-      });
-
-      approveButton.addEventListener("click", async () => {
-        try { await decide("approve"); } catch (error) { setError(error.message || String(error)); }
-      });
-      denyButton.addEventListener("click", async () => {
-        try { await decide("deny"); } catch (error) { setError(error.message || String(error)); }
       });
 
       async function init() {
@@ -624,27 +666,14 @@ def _consent_html(
           setError("Missing pending authorization ID.");
           return;
         }
-        const pending = await loadPending();
         const { data } = await client.auth.getSession();
-        const session = data.session;
-        const scopes = Array.isArray(pending.scopes) && pending.scopes.length
-          ? `<ul>${pending.scopes.map((scope) => `<li>${scope}</li>`).join("")}</ul>`
-          : "<p>No scopes requested.</p>";
-        detailsEl.innerHTML = `
-          <strong>${pending.client_name || "Unknown client"}</strong>
-          <p>This client wants to access your workout data.</p>
-          <p><strong>Redirect URI:</strong><br>${pending.redirect_uri || "Unknown"}</p>
-          <p><strong>Requested scopes:</strong></p>
-          ${scopes}
-        `;
-        detailsEl.hidden = false;
-        if (!session) {
-          statusEl.textContent = "Sign in to continue.";
-          loginActions.hidden = false;
-          emailForm.style.display = "block";
+        if (data.session) {
+          try { await autoApprove(); } catch (err) { setError(err.message || String(err)); }
           return;
         }
-        showApproveScreen();
+        statusEl.textContent = "Sign in to connect Nexus.";
+        loginActions.hidden = false;
+        emailForm.style.display = "block";
       }
 
       init().catch((error) => setError(error instanceof Error ? error.message : String(error)));
@@ -674,11 +703,62 @@ def _callback_html(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nexus Sign In</title>
+    <title>Nexus – Connecting</title>
+    <style>
+      *{ margin:0; padding:0; box-sizing:border-box; }
+      body {
+        background:#f5f2ea;
+        color:#525051;
+        font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        position:relative;
+        overflow:hidden;
+      }
+      .bg-img {
+        position:fixed;
+        top:50%;
+        left:50%;
+        transform:translate(-50%,-50%);
+        width:min(500px,80vw);
+        border-radius:18px;
+        opacity:0.12;
+        pointer-events:none;
+        z-index:0;
+      }
+      main {
+        position:relative;
+        z-index:1;
+        text-align:center;
+        padding:2rem;
+      }
+      h1 {
+        font-size:2.4rem;
+        font-weight:700;
+        margin-bottom:0.6rem;
+        color:#3a3838;
+      }
+      p {
+        font-size:1.15rem;
+        color:#9B9692;
+        line-height:1.5;
+      }
+      .spinner { display:inline-block; width:18px; height:18px; border:2px solid #3a3838; border-top-color:transparent; border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:8px; }
+      @keyframes spin { to { transform:rotate(360deg); } }
+      pre { white-space:pre-wrap; word-break:break-word; color:#c44; margin-top:1rem; font-size:.9rem; }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
-    <p>Finishing sign in.</p>
+    <img class="bg-img" src="https://kushalsm.com/playground_pic.png" alt="" />
+    <main>
+      <h1>Nexus</h1>
+      <p id="status"><span class="spinner"></span>Connecting...</p>
+      <pre id="error" hidden></pre>
+    </main>
     <script>
       const config = __CONFIG__;
       const client = window.supabase.createClient(config.supabaseUrl, config.publishableKey, {
@@ -696,9 +776,29 @@ def _callback_html(
         const { error } = await client.auth.exchangeCodeForSession(code);
         if (error) throw error;
 
-        window.location.assign(`${config.baseUrl}/oauth/consent?pending_id=${encodeURIComponent(config.pendingId)}`);
+        const { data } = await client.auth.getSession();
+        const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("Session not established.");
+
+        document.getElementById("status").innerHTML = '<span class="spinner"></span>Redirecting...';
+        const response = await fetch(`${config.baseUrl}/oauth/decision`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ pending_id: config.pendingId, action: "approve" })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || response.statusText);
+        window.location.assign(payload.redirect_to);
       }
-      init().catch((error) => { document.body.innerHTML = `<pre>${error.message || String(error)}</pre>`; });
+      init().catch((error) => {
+        document.getElementById("status").textContent = "Something went wrong.";
+        const el = document.getElementById("error");
+        el.hidden = false;
+        el.textContent = error.message || String(error);
+      });
     </script>
   </body>
 </html>
