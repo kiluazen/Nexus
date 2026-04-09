@@ -609,8 +609,23 @@ def _consent_html(
         errorEl.textContent = message;
       }
 
-      async function autoApprove() {
-        statusEl.innerHTML = '<span class="spinner"></span>Connecting...';
+      function clientLabel(redirectUri) {
+        if (!redirectUri) return null;
+        if (redirectUri.includes("claude.ai") || redirectUri.includes("claude.com")) return "Claude";
+        if (redirectUri.includes("chatgpt.com") || redirectUri.includes("openai.com")) return "ChatGPT";
+        return null;
+      }
+
+      let pendingData = null;
+
+      async function autoApprove(hasExistingSession) {
+        const label = clientLabel(pendingData?.redirect_uri);
+        const target = label ? ` to ${label}` : "";
+        if (hasExistingSession) {
+          statusEl.innerHTML = '<span class="spinner"></span>Found existing session. Connecting' + target + '...';
+        } else {
+          statusEl.innerHTML = '<span class="spinner"></span>Connecting' + target + '...';
+        }
         loginActions.hidden = true;
         const { data } = await client.auth.getSession();
         const accessToken = data.session?.access_token;
@@ -625,7 +640,7 @@ def _consent_html(
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || response.statusText);
-        statusEl.innerHTML = '<span class="spinner"></span>Redirecting...';
+        statusEl.innerHTML = '<span class="spinner"></span>Redirecting' + target + '...';
         window.location.assign(payload.redirect_to);
         setTimeout(() => window.close(), 1000);
       }
@@ -655,7 +670,7 @@ def _consent_html(
           setError(error.message);
           return;
         }
-        try { await autoApprove(); } catch (err) { setError(err.message || String(err)); }
+        try { await autoApprove(false); } catch (err) { setError(err.message || String(err)); }
       });
 
       passwordInput.addEventListener("keydown", (e) => {
@@ -667,12 +682,15 @@ def _consent_html(
           setError("Missing pending authorization ID.");
           return;
         }
+        const resp = await fetch(`${config.baseUrl}/oauth/pending?pending_id=${encodeURIComponent(config.pendingId)}`);
+        if (resp.ok) pendingData = await resp.json();
         const { data } = await client.auth.getSession();
         if (data.session) {
-          try { await autoApprove(); } catch (err) { setError(err.message || String(err)); }
+          try { await autoApprove(true); } catch (err) { setError(err.message || String(err)); }
           return;
         }
-        statusEl.textContent = "Sign in to connect Nexus.";
+        const label = clientLabel(pendingData?.redirect_uri);
+        statusEl.textContent = label ? `Sign in to connect Nexus to ${label}.` : "Sign in to connect Nexus.";
         loginActions.hidden = false;
         emailForm.style.display = "block";
       }
@@ -770,10 +788,20 @@ def _callback_html(
           flowType: "pkce"
         }
       });
+      function clientLabel(redirectUri) {
+        if (!redirectUri) return null;
+        if (redirectUri.includes("claude.ai") || redirectUri.includes("claude.com")) return "Claude";
+        if (redirectUri.includes("chatgpt.com") || redirectUri.includes("openai.com")) return "ChatGPT";
+        return null;
+      }
+
       async function init() {
+        const statusEl = document.getElementById("status");
         const searchParams = new URLSearchParams(window.location.search);
         const code = searchParams.get("code");
         if (!code) throw new Error("Missing code.");
+
+        statusEl.innerHTML = '<span class="spinner"></span>Signing in...';
         const { error } = await client.auth.exchangeCodeForSession(code);
         if (error) throw error;
 
@@ -781,7 +809,12 @@ def _callback_html(
         const accessToken = data.session?.access_token;
         if (!accessToken) throw new Error("Session not established.");
 
-        document.getElementById("status").innerHTML = '<span class="spinner"></span>Redirecting...';
+        const pendingResp = await fetch(`${config.baseUrl}/oauth/pending?pending_id=${encodeURIComponent(config.pendingId)}`);
+        const pending = pendingResp.ok ? await pendingResp.json() : null;
+        const label = clientLabel(pending?.redirect_uri);
+        const target = label ? ` to ${label}` : "";
+
+        statusEl.innerHTML = '<span class="spinner"></span>Redirecting' + target + '...';
         const response = await fetch(`${config.baseUrl}/oauth/decision`, {
           method: "POST",
           headers: {
