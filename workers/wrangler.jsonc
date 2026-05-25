@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "nexus-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV",    "id": "eaaed7dedb9a410281488e12716c5041" },
+    { "binding": "NEXUS_CACHE", "id": "7b300dd97fac4570a143cc6a462780bb" }
+  ],
+
+  "hyperdrive": [
+    { "binding": "NEXUS_DB", "id": "7634c5ea1a4f4ca6a73dd6764fcd2c0a" }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_OBJECT", "class_name": "NexusMcpAgent" }]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["NexusMcpAgent"] }
+  ],
+
+  "vars": {
+    "BASE_URL": "https://nexus-mcp.kushalsokke.workers.dev"
+  }
+}

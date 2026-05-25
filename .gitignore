@@ -9,3 +9,9 @@ build/
 *.md
 !docs/**/*.md
 !README.md
+
+# Workers build outputs
+workers/node_modules/
+workers/.wrangler/
+workers/dist/
+workers/worker-configuration.d.ts

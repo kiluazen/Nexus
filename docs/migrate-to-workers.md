@@ -1,245 +1,361 @@
 # Migrating Nexus to Cloudflare Workers
 
-Target: replace the Cloud Run + Python (FastMCP) + Supabase Postgres stack
-with Cloudflare Workers + TypeScript + workers-oauth-provider + McpAgent +
-Hyperdrive→Supabase Postgres + Workers KV.
+Target stack: Cloudflare Workers + TypeScript + `@cloudflare/workers-oauth-provider` + Cloudflare Agents (`McpAgent` Durable Object) + Hyperdrive → Supabase Postgres + Workers KV.
 
-This is the architecture-of-record. If you change a primitive (drop KV
-for D1, swap McpAgent for raw `createMcpHandler`, route through a
-different IdP), update this file.
+This document is the architecture of record. Every API surface and binding name below is verified against the actual lib README, not sketched from memory — earlier drafts hallucinated three different shapes of `completeAuthorization` and got the KV binding name wrong. If you change a primitive, update this file the same day; a stale doc is more dangerous than no doc.
 
-## Why Workers
+The companion file `mcp-path-trailing-slash.md` is non-negotiable and carries over verbatim. Read it before touching path config.
 
-See `decision-cloudrun-vs-workers.md` (or the conversation that produced
-it). Short version: edge isolates beat single-region Cloud Run on tail
-latency and cold starts, `workers-oauth-provider` is what the MCP spec
-authors actually use, and Durable Objects are the right substrate for
-MCP session state when we eventually need elicitation/sampling.
+---
 
-## Target architecture
+## 1. Why this shape
+
+Three forces drive the architecture:
+
+1. **Edge over region.** Cloud Run pinned to `asia-south1` means every `/mcp` call from a US user pays ~250ms before our code runs. Workers isolates spawn at the nearest PoP in ~5ms. For tools an LLM fires off four times per turn, that delta is the difference between snappy and laggy.
+2. **Spec-native primitives.** `workers-oauth-provider` is the OAuth 2.1 AS that the MCP-on-Workers examples (Anthropic, Cloudflare, Stytch) all use. Every endpoint the MCP spec requires — `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/register`, `/token`, `WWW-Authenticate: ... resource_metadata=...` — is the lib's job, not ours. We had to maintain all of these by hand on FastMCP, and got bitten twice by spec drift (the 307 loop, the trailing-slash strict match).
+3. **Durable Object as session boundary.** MCP's evolving feature set (elicitation, sampling, multi-turn cancellation) all assume server-held session state. `McpAgent` is a DO subclass — one DO per MCP session, addressable by ID, with native storage. Cloud Run sessions only exist in `psycopg_pool` connections we manage. The DO is the right substrate before we need it, not after.
+
+Cost, rewrite duration, and "is the existing code fine" are not part of the decision and are not discussed in this doc.
+
+---
+
+## 2. Architecture
 
 ```
-                ┌───────────────────────────────────────────────────────┐
-                │  Cloudflare edge (global)                             │
-                │                                                       │
-   client ──▶   │  ┌─────────────────────────────────────────────────┐  │
-  (Claude,      │  │  Worker: nexus-mcp                              │  │
-   ChatGPT,     │  │                                                 │  │
-   Codex,       │  │   workers-oauth-provider   (OAuth surface)      │  │
-   nexus CLI)   │  │       │                                         │  │
-                │  │       ▼                                         │  │
-                │  │   McpAgent (Durable Object)                     │  │
-                │  │       │                                         │  │
-                │  │       ├── log_fitness_entries                   │  │
-                │  │       ├── get_fitness_history                   │  │
-                │  │       ├── update_fitness_entry                  │  │
-                │  │       └── manage_friend_connections             │  │
-                │  └────────────┬───────────────────┬─────────────────┘  │
-                │               │                   │                    │
-                │     ┌─────────▼─────────┐   ┌─────▼──────────┐         │
-                │     │  Workers KV       │   │  Hyperdrive    │         │
-                │     │  ── OAuth state:  │   │   pool         │         │
-                │     │     codes,        │   │       │        │         │
-                │     │     access toks,  │   │       │        │         │
-                │     │     refresh toks, │   │       ▼        │         │
-                │     │     clients,      │   │  Supabase      │         │
-                │     │     pending       │   │  Postgres      │         │
-                │     │  ── JWKS cache    │   │  (users,       │         │
-                │     └───────────────────┘   │   entries,     │         │
-                │                             │   friendships) │         │
-                └─────────────────────────────────────────────────────────┘
-
-                                Upstream IdP (unchanged):
-                                   Supabase Auth  ──  Google OAuth
-                                                  ──  email/password
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  Cloudflare edge (every PoP)                                                  │
+│                                                                               │
+│   Client ──HTTPS──▶  OAuthProvider (entrypoint)                               │
+│                          │                                                    │
+│                          │  routes by path:                                   │
+│                          │                                                    │
+│        ┌─────────────────┼────────────────────┬─────────────────────────┐     │
+│        ▼                 ▼                    ▼                         ▼     │
+│   /token, /register,   /authorize,         /mcp, /mcp/,                / *    │
+│   /.well-known/*       /oauth/decision,    /sse  ──▶  NexusMcpAgent    misc  │
+│   (lib-owned)          /auth/callback,                (Durable Object)  (defaultHandler)
+│                        REST /api/v1/*       │                                 │
+│                        (defaultHandler)     │                                 │
+│                                             ▼                                 │
+│                                       four MCP tools                          │
+│                                             │                                 │
+│             ┌───────────────────────────────┴────────────────────┐            │
+│             ▼                                                    ▼            │
+│      Hyperdrive (NEXUS_DB)                              Workers KV            │
+│             │                                            ── OAUTH_KV          │
+│             ▼                                              (lib-owned:        │
+│      Supabase Postgres                                      clients, codes,   │
+│      (users, entries, friendships)                          access tokens,    │
+│             ▲                                               refresh tokens,   │
+│             │                                               grants)           │
+│             │                                            ── NEXUS_CACHE       │
+│             │                                              (Supabase JWKS,    │
+│             │                                               pending consent   │
+│             │                                               state by nonce)   │
+│             │                                                                 │
+└─────────────┼─────────────────────────────────────────────────────────────────┘
+              │
+              ▼
+   Supabase Auth (upstream IdP — unchanged)
+   ── Google OAuth
+   ── Email/password
 ```
 
-Three primitives, clean separation:
+Three storage primitives with non-overlapping responsibilities:
 
-- **KV** — short-lived OAuth state (authz codes, access tokens, refresh
-  tokens, pending consents, registered DCR clients). All have natural
-  TTLs (5min – 30 days). Edge-local reads, ~5ms.
-- **Hyperdrive** — connection pool fronting the existing Supabase
-  Postgres. Fitness data (`users`, `entries`, `friendships`) stays
-  there; we don't migrate rows. Hyperdrive caches the connection so
-  every `/mcp` call doesn't re-handshake to Supabase from a fresh PoP.
-- **Durable Object** — the `NexusMcpAgent` class, one DO per MCP
-  session. Holds the authenticated user context for the lifetime of
-  the SSE/streamable-HTTP session.
+| Store | Owner | Lifetime | Contents |
+|---|---|---|---|
+| **`OAUTH_KV`** (KV namespace) | the lib | TTLs from 5min (auth code) to 90 days (DCR client) | Registered DCR clients, authorization codes, access tokens, refresh tokens, grants |
+| **`NEXUS_CACHE`** (KV namespace) | our code | 24h (JWKS), 10min (consent state) | Cached Supabase JWKS document; the in-flight `parseAuthRequest` result during browser sign-in |
+| **`NEXUS_DB`** (Hyperdrive binding) | our code | persistent | `users`, `entries`, `friendships`. Existing Supabase tables — no schema migration, no row migration |
 
-Supabase Auth stays as the upstream IdP. We do NOT rewrite Google
-login — the consent screen at `/oauth/consent` still drops the user
-into Supabase's Google flow, and we still verify the Supabase JWT
-before minting our own access token. The only thing that changes is
-where our own tokens live (Postgres → KV).
+Supabase Auth stays the upstream IdP. Google OAuth and email/password flows live in Supabase, unchanged. The Worker only verifies the Supabase JWT and re-issues our own MCP access token.
 
-## File layout
+---
+
+## 3. File layout
 
 ```
 nexus/
-  workers/                          # new — the Worker
+  workers/                                  # new — the Worker
     package.json
     tsconfig.json
     wrangler.jsonc
     src/
-      index.ts                      # entry — wires OAuthProvider + McpAgent
-      mcp.ts                        # McpAgent subclass with the 4 tools
+      index.ts                              # OAuthProvider entry, exports NexusMcpAgent
+      mcp.ts                                # NexusMcpAgent (McpAgent subclass), 4 tools
       handlers/
-        consent.ts                  # GET /oauth/consent (HTML)
-        callback.ts                 # GET /auth/callback (HTML, exchanges Supabase code)
-        decision.ts                 # POST /oauth/decision (approve/deny → mint MCP code)
-        well-known.ts               # apex + path-suffixed protected-resource docs
+        default.ts                          # all non-MCP, non-lib routes (defaultHandler)
+        authorize.ts                        # GET /authorize — parseAuthRequest + render consent
+        decision.ts                         # POST /oauth/decision — verify Supabase, completeAuthorization
+        callback.ts                         # GET /auth/callback — Supabase OAuth landing
+        protected-resource.ts               # path-suffixed /.well-known/oauth-protected-resource/mcp[/]
+        rest-api.ts                         # /api/v1/* for the PyPI CLI
+        well-known-static.ts                # /.well-known/openai-apps-challenge (apex)
       auth/
-        supabase-verifier.ts        # JWKS-cached Supabase JWT verifier
-        upstream-handler.ts         # workers-oauth-provider upstream handler shape
+        supabase-jwt.ts                     # JWKS-cached Supabase JWT verifier
+        consent-html.ts                     # Supabase-JS sign-in page (same as today's)
+        callback-html.ts                    # Supabase OAuth callback page (same as today's)
       data/
-        db.ts                       # Hyperdrive client + query helpers
-        entries.ts                  # log_entries / history / update_entry
-        friends.ts                  # friendships CRUD
+        db.ts                               # postgres.js client over Hyperdrive (prepare: false)
+        entries.ts                          # log / history / update_entry queries
+        friends.ts                          # friendships CRUD + friend codes
       schema/
-        entry-shapes.ts             # zod schemas for workout/meal/weight
-        tool-inputs.ts              # zod input schemas per tool
+        entry-shapes.ts                     # zod: workout / meal / weight discriminated union
+        tool-inputs.ts                      # zod: per-tool input shape
       lib/
-        macros.ts                   # meal totals computation (port from Python)
-        exercise-keys.ts            # snake_case normalization
-        friend-codes.ts             # NEXUS-XXXX generation/lookup
-      well-known/
-        openai-apps-challenge.txt   # static — served at apex
-        privacy-policy.md
+        macros.ts                           # meal-item totals computation
+        exercise-keys.ts                    # snake_case normalization rules
+        friend-codes.ts                     # NEXUS-XXXX gen/lookup
+    static/
+      openai-apps-challenge                 # plain-text token, served verbatim at apex
     test/
-      tools.spec.ts                 # vitest + miniflare
-      oauth.spec.ts
-  src/                              # unchanged — the PyPI CLI
+      tools.spec.ts                         # vitest + @cloudflare/vitest-pool-workers
+      oauth.spec.ts                         # parseAuthRequest → consent → decision → token flow
+      protected-resource.spec.ts            # trailing-slash invariant carries over
+  src/                                      # unchanged — the PyPI CLI
     nexus/
-      cli.py                        # `pip install nexus-fitness`
-      auth.py                       # CLI's local OAuth client only (no server bits)
+      cli.py
+      auth.py                               # local OAuth client only
   docs/
-    migrate-to-workers.md           # this file
-    mcp-path-trailing-slash.md      # rule carries over verbatim — Workers must honor it
+    migrate-to-workers.md                   # this file
+    mcp-path-trailing-slash.md              # rule applies to Workers too
   supabase/
-    migrations/                     # fitness schema stays; we delete oauth_* tables
-                                    # in a new migration after cutover
+    migrations/
+      20260601000000_drop_oauth_tables.sql  # post-cutover, drops the five oauth_* tables
 ```
 
-`src/nexus/server.py`, `src/nexus/auth.py` (the server-side OAuth
-provider), and `Dockerfile` are deleted post-cutover. The PyPI CLI
-package (`nexus-fitness`) keeps its CLI-only auth code and just points
-at the Workers domain.
+Post-cutover deletions: `src/nexus/server.py`, `src/nexus/auth.py`, `src/nexus/db.py`, `src/nexus/storage.py`, `Dockerfile`, and the five `oauth_*` Postgres tables. The PyPI `nexus-fitness` package keeps only the CLI surface.
 
-## OAuth surface — what workers-oauth-provider gives us vs what we write
+---
 
-The Cloudflare lib is the OAuth 2.1 Authorization Server. It owns:
+## 4. The OAuth flow, end to end
 
-- `/.well-known/oauth-authorization-server` (metadata)
-- `/.well-known/oauth-protected-resource` and the path-suffixed
-  variants (per RFC 9728, see `mcp-path-trailing-slash.md`)
-- `/register` (RFC 7591 dynamic client registration)
-- `/authorize` (start an authz request)
-- `/token` (code exchange, refresh)
-- KV storage of clients, codes, access tokens, refresh tokens
-- 401 responses on the protected MCP endpoint, including the
-  `WWW-Authenticate: ... resource_metadata="..."` hint
+This is the section where the previous draft fell apart. The corrected flow uses the actual library API.
 
-We provide one thing: the **upstream handler**. That's a fetch handler
-the lib calls when a user lands on `/authorize` and we need to identify
-them. Shape:
+### 4.1 What the library owns
+
+`OAuthProvider` is itself the Worker entrypoint. When a request comes in, it dispatches by path:
+
+| Path | Owner | Notes |
+|---|---|---|
+| `/.well-known/oauth-authorization-server` | lib | Built from constructor args |
+| `/.well-known/oauth-protected-resource` (bare) | lib | Built from `resourceMetadata` |
+| `/register` | lib | RFC 7591 DCR; persists to `OAUTH_KV` |
+| `/token` | lib | Code exchange + refresh; persists to `OAUTH_KV` |
+| `/mcp`, `/mcp/`, `/sse` | `apiHandlers[path]` | Lib validates bearer first, then dispatches with `ctx.props` populated |
+| everything else | `defaultHandler` | Our code |
+
+The OAuth 2.1 surface is the lib's. We don't write `/token`. We don't write client registration. We don't write 401 + `WWW-Authenticate` emission on the protected paths.
+
+### 4.2 What we own
+
+Exactly three things:
+
+- **The authorize endpoint** (`GET /authorize`). Parses the incoming OAuth request, stashes it, redirects the browser to a sign-in page.
+- **The decision endpoint** (`POST /oauth/decision`). Verifies the Supabase JWT the browser collected, retrieves the stashed request, asks the lib to complete authorization, returns the redirect URL.
+- **The Supabase callback page** (`GET /auth/callback`). Browser-side: exchanges the Supabase OAuth code for a session, then POSTs to `/oauth/decision`.
+
+### 4.3 Sequence
+
+```
+Client                  /authorize         consent.html        Supabase Auth      /oauth/decision      /token
+  │                         │                  │                    │                  │                 │
+  │   GET /authorize?...    │                  │                    │                  │                 │
+  ├────────────────────────▶│                  │                    │                  │                 │
+  │                         │ parseAuthRequest │                    │                  │                 │
+  │                         │ → save in KV     │                    │                  │                 │
+  │                         │   nonce N (10min)│                    │                  │                 │
+  │                         │                  │                    │                  │                 │
+  │  302 → /authorize/N     │                  │                    │                  │                 │
+  │◀────────────────────────┤                  │                    │                  │                 │
+  │                                            │                    │                  │                 │
+  │   GET /authorize/N                         │                    │                  │                 │
+  ├───────────────────────────────────────────▶│                    │                  │                 │
+  │                                            │                    │                  │                 │
+  │   render Supabase-JS sign-in form          │                    │                  │                 │
+  │◀───────────────────────────────────────────┤                    │                  │                 │
+  │                                            │                    │                  │                 │
+  │   ── existing session in localStorage ──▶  ├────  getSession ──▶│                  │                 │
+  │                                            │◀─── access_token ──┤                  │                 │
+  │                                            │                                                          │
+  │   ── no session ── click "Continue with Google" ──▶ Supabase /authorize ──▶ Google ──▶ /auth/callback│
+  │                                            │                                                          │
+  │                                            │   exchange code → access_token                           │
+  │                                            │                                                          │
+  │                                            │   POST /oauth/decision  { nonce: N, token: <supabase_jwt> }
+  │                                            ├──────────────────────────────────────▶│                 │
+  │                                            │                                       │ verify JWT       │
+  │                                            │                                       │ load N from KV   │
+  │                                            │                                       │ completeAuthz    │
+  │                                            │                                       │ → { redirectTo } │
+  │                                            │                       { redirectTo }  │                  │
+  │                                            │◀──────────────────────────────────────┤                  │
+  │   window.location = redirectTo                                                                        │
+  │                                                                                                       │
+  │   ── follows redirect with ?code=<authz_code>&state=... ───▶ Claude/ChatGPT exchanges at /token  ────▶│
+  │                                                                                                       │
+  │   ← access_token + refresh_token (Nexus-issued, stored in OAUTH_KV)                                   │
+  │                                                                                                       │
+  │   ── subsequent /mcp calls carry Authorization: Bearer <access_token> ──▶                             │
+```
+
+The nonce indirection (`/authorize` → `/authorize/N`) is so the consent page never sees raw OAuth params in its URL — they live server-side in KV under nonce `N` with a 10-minute TTL. The browser only carries `N`.
+
+### 4.4 Code shape
+
+#### `index.ts`
 
 ```ts
-// auth/upstream-handler.ts
-export default {
-  async fetch(req: Request, env: Env, ctx: ExecutionContext) {
-    const url = new URL(req.url);
+import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import defaultHandler from "./handlers/default";
+import { NexusMcpAgent } from "./mcp";
 
-    if (url.pathname === "/oauth/consent") {
-      // Render the Supabase-JS sign-in page (same HTML we serve today).
-      // After Supabase login succeeds, POST to /oauth/decision.
-      return renderConsentPage(url.searchParams.get("oauthReqId")!, env);
-    }
+export { NexusMcpAgent };
 
-    if (url.pathname === "/auth/callback") {
-      // Supabase OAuth callback — exchange `code` for a Supabase session,
-      // then POST /oauth/decision with that session's access_token.
-      return renderCallbackPage(url.searchParams.get("oauthReqId")!, env);
-    }
-
-    if (url.pathname === "/oauth/decision" && req.method === "POST") {
-      const body = await req.json<{ oauthReqId: string; action: "approve" | "deny" }>();
-      if (body.action === "deny") {
-        return env.OAUTH_PROVIDER.completeAuthorization({
-          request: { oauthReqId: body.oauthReqId },
-          deniedReason: "user_denied",
-        });
-      }
-
-      // Verify the Supabase JWT presented by the browser, extract user.
-      const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
-      const claims = await verifySupabaseJwt(bearer, env);
-      if (!claims) return new Response("Unauthorized", { status: 401 });
-
-      // Hand control back to the OAuth provider — it stores the auth code
-      // in KV bound to this user and redirects the MCP client.
-      return env.OAUTH_PROVIDER.completeAuthorization({
-        request: { oauthReqId: body.oauthReqId },
-        userId: claims.sub,
-        metadata: {
-          email: claims.email,
-          name: claims.name,
-          preferred_username: claims.preferred_username,
-        },
-        scope: ["openid", "profile", "email"],
-      });
-    }
-
-    return new Response("Not found", { status: 404 });
+export default new OAuthProvider({
+  apiHandlers: {
+    "/mcp":  NexusMcpAgent.serve("/mcp"),
+    "/mcp/": NexusMcpAgent.serve("/mcp/"),       // trailing-slash invariant
+    "/sse":  NexusMcpAgent.serveSSE("/sse"),
   },
-};
+  defaultHandler,
+  authorizeEndpoint:          "/authorize",
+  tokenEndpoint:               "/token",
+  clientRegistrationEndpoint:  "/register",
+  scopesSupported: ["openid", "profile", "email"],
+  resourceMetadata: {
+    resource: "https://nexus.kushalsm.com/mcp",  // canonical, no trailing slash
+    authorization_servers: ["https://nexus.kushalsm.com"],
+    scopes_supported:       ["openid", "profile", "email"],
+    bearer_methods_supported: ["header"],
+    resource_name: "Nexus",
+  },
+});
 ```
 
-That's the whole upstream surface. Compared to `src/nexus/auth.py`
-(~470 LOC implementing every authorization-server endpoint by hand
-against Postgres), this is the actual scope of work — the rest is
-the lib's job.
+Notes:
+- KV binding **must** be named `OAUTH_KV`. The lib hardcodes the name; the constructor has no override.
+- `resourceMetadata.resource` is set explicitly. If we omit it, the lib defaults to the origin, and Claude's strict matcher might accept it as "origin match" but might not — this is exactly the kind of "rely on undocumented default" trap we hit last time.
+- The library only serves the bare `/.well-known/oauth-protected-resource`. Path-suffixed variants (`.../oauth-protected-resource/mcp` and `.../mcp/`) must be served by `defaultHandler` — see §6.
 
-`verifySupabaseJwt` caches the JWKS in KV with a 24h TTL so we don't
-re-fetch Supabase's keys on every consent submission.
+#### `handlers/authorize.ts`
 
-## MCP server — McpAgent
+```ts
+import { uuid } from "../lib/uuid";
+
+const CONSENT_TTL = 60 * 10;
+
+export async function authorize(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const parts = url.pathname.split("/");
+
+  if (parts.length === 2) {
+    // GET /authorize?response_type=code&client_id=...&redirect_uri=...&...
+    const parsed = await env.OAUTH_PROVIDER.parseAuthRequest(req);
+    const nonce = uuid();
+    await env.NEXUS_CACHE.put(
+      `consent:${nonce}`,
+      JSON.stringify(parsed),
+      { expirationTtl: CONSENT_TTL },
+    );
+    return Response.redirect(`${url.origin}/authorize/${nonce}`, 302);
+  }
+
+  // GET /authorize/<nonce> — render the sign-in HTML
+  const nonce = parts[2];
+  const raw = await env.NEXUS_CACHE.get(`consent:${nonce}`);
+  if (!raw) return new Response("Authorization request expired", { status: 410 });
+
+  return new Response(consentHtml({ nonce, env }), {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+```
+
+The parsed request from `parseAuthRequest()` has shape `{ responseType, clientId, redirectUri, scope, state }` (camelCase per the README). It's stored as-is in KV under the nonce.
+
+#### `handlers/decision.ts`
+
+```ts
+import { verifySupabaseJwt } from "../auth/supabase-jwt";
+
+export async function decision(req: Request, env: Env): Promise<Response> {
+  const body = await req.json<{ nonce: string; action: "approve" | "deny"; supabase_token?: string }>();
+
+  const raw = await env.NEXUS_CACHE.get(`consent:${body.nonce}`);
+  if (!raw) return Response.json({ error: "expired" }, { status: 410 });
+  const parsed = JSON.parse(raw) as ParsedAuthRequest;
+  await env.NEXUS_CACHE.delete(`consent:${body.nonce}`);
+
+  if (body.action === "deny") {
+    return Response.json({
+      redirect_to: `${parsed.redirectUri}?error=access_denied&state=${encodeURIComponent(parsed.state)}`,
+    });
+  }
+
+  const claims = await verifySupabaseJwt(body.supabase_token, env);
+  if (!claims) return Response.json({ error: "invalid_supabase_token" }, { status: 401 });
+
+  const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+    request: parsed,
+    userId: claims.sub,
+    scope: parsed.scope,
+    props: {
+      userId:      claims.sub,
+      email:       claims.email ?? "",
+      displayName: claims.name ?? claims.preferred_username ?? claims.email ?? "Nexus user",
+    },
+    metadata: {
+      signed_in_via: claims.app_metadata?.provider ?? "supabase",
+      issued_at: Date.now(),
+    },
+  });
+
+  return Response.json({ redirect_to: redirectTo });
+}
+```
+
+Two things to notice:
+- `props` is the live payload — what `NexusMcpAgent` reads as `this.props` on every tool call. **Must** contain `userId` or the tools see `undefined` and write to a phantom user.
+- `metadata` is opaque to runtime — just persisted with the grant for audit/debugging. Don't put live-path data there.
+
+`completeAuthorization` returns `{ redirectTo: string }` (verified against README). We pass it back as JSON to the consent page, which `window.location`s to it.
+
+---
+
+## 5. The MCP server
 
 ```ts
 // mcp.ts
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import {
-  logEntries,
-  getHistory,
-  updateEntry,
-  manageFriends,
-} from "./data/entries";
 import { LogInput, HistoryInput, UpdateInput, FriendsInput } from "./schema/tool-inputs";
+import { logEntries, getHistory, updateEntry } from "./data/entries";
+import { manageFriends } from "./data/friends";
 
-type Props = {
+interface Props {
   userId: string;
-  email?: string;
-  displayName?: string;
-};
+  email: string;
+  displayName: string;
+}
 
-export class NexusMcpAgent extends McpAgent<Env, Props> {
+export class NexusMcpAgent extends McpAgent<Env, unknown, Props> {
   server = new McpServer({
     name: "Nexus – Workout and Nutrition Tracker",
     version: "3.0",
   });
 
   async init() {
+    const u = () => this.props.userId;
+
     this.server.tool(
       "log_fitness_entries",
       "Store workout, meal, or body-weight entries for the authenticated Nexus user.",
       LogInput.shape,
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      async (args) => {
-        const result = await logEntries(this.env, this.props.userId, args);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
-      },
+      async (args) => textResult(await logEntries(this.env, u(), args)),
     );
 
     this.server.tool(
@@ -247,10 +363,7 @@ export class NexusMcpAgent extends McpAgent<Env, Props> {
       "Fetch workouts, meals, body-weight entries, exercise keys, and friend-shared history.",
       HistoryInput.shape,
       { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-      async (args) => {
-        const result = await getHistory(this.env, this.props.userId, args);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
-      },
+      async (args) => textResult(await getHistory(this.env, u(), args)),
     );
 
     this.server.tool(
@@ -258,10 +371,7 @@ export class NexusMcpAgent extends McpAgent<Env, Props> {
       "Replace one existing entry owned by the authenticated user.",
       UpdateInput.shape,
       { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      async (args) => {
-        const result = await updateEntry(this.env, this.props.userId, args);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
-      },
+      async (args) => textResult(await updateEntry(this.env, u(), args)),
     );
 
     this.server.tool(
@@ -269,136 +379,141 @@ export class NexusMcpAgent extends McpAgent<Env, Props> {
       "List, add, accept, reject, or remove Nexus friend connections.",
       FriendsInput.shape,
       { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-      async (args) => {
-        const result = await manageFriends(this.env, this.props.userId, args);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
-      },
+      async (args) => textResult(await manageFriends(this.env, u(), args)),
     );
   }
 }
+
+function textResult(payload: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(payload) }] };
+}
 ```
 
-`McpAgent` is a Durable Object — one instance per MCP session, lifetime
-tied to the SSE/streamable-HTTP connection. `this.props` is populated
-by the OAuth provider from the metadata we set in `completeAuthorization`.
-There is no `require_mcp_user()` dance; if the request reaches `init()`
-the user is authenticated.
+`McpAgent` is a Durable Object. The provider lib validates the bearer, looks up the grant in `OAUTH_KV`, copies `props` into the DO context, and dispatches the call. By the time `init()` runs, `this.props.userId` is always present — if it weren't, the lib would have returned 401 before getting here.
 
-## Wiring it together
+There is no `require_mcp_user()`, no "anonymous test user" fallback. Anonymous requests don't reach the agent.
+
+---
+
+## 6. Trailing-slash invariant on Workers
+
+The library serves only the bare `/.well-known/oauth-protected-resource`. The MCP client discovery logic prefers the URL in the `WWW-Authenticate` header (which the lib emits with `resource_metadata="<base>/.well-known/oauth-protected-resource"`), so the bare endpoint is enough for compliant clients.
+
+But the discovery spec defines two fallbacks, and the docs at `mcp-path-trailing-slash.md` say we serve all three variants for belt-and-suspenders. We do the same on Workers, in `handlers/protected-resource.ts`:
 
 ```ts
-// index.ts
-import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
-import upstreamHandler from "./auth/upstream-handler";
-import { NexusMcpAgent } from "./mcp";
+const PAYLOAD = {
+  resource: "https://nexus.kushalsm.com/mcp",
+  authorization_servers: ["https://nexus.kushalsm.com"],
+  scopes_supported: ["openid", "profile", "email"],
+  bearer_methods_supported: ["header"],
+  resource_name: "Nexus",
+};
 
-export { NexusMcpAgent };
-
-export default new OAuthProvider({
-  apiHandlers: {
-    "/mcp": NexusMcpAgent.serve("/mcp"),
-    "/mcp/": NexusMcpAgent.serve("/mcp/"),  // trailing-slash alias, see RCA doc
-    "/sse": NexusMcpAgent.serveSSE("/sse"), // optional legacy SSE transport
-  },
-  defaultHandler: upstreamHandler,
-  authorizeEndpoint: "/oauth/consent",
-  tokenEndpoint: "/token",
-  clientRegistrationEndpoint: "/register",
-  scopesSupported: ["openid", "profile", "email"],
-  resourceName: "Nexus – Workout and Nutrition Tracker",
-  resourceDocumentation: "https://nexus.kushalsm.com/",
-});
+export function protectedResource(req: Request): Response | null {
+  const { pathname } = new URL(req.url);
+  if (
+    pathname === "/.well-known/oauth-protected-resource/mcp" ||
+    pathname === "/.well-known/oauth-protected-resource/mcp/"
+  ) {
+    return Response.json(PAYLOAD, { headers: { "cache-control": "public, max-age=3600" } });
+  }
+  return null;
+}
 ```
 
-`OAuthProvider` is itself a `fetch` handler. It dispatches:
-- protected paths (`/mcp`, `/mcp/`, `/sse`) → validates the bearer
-  token, hands off to the `apiHandlers` map with `props` populated.
-- everything else → `defaultHandler` (our upstream handler + static
-  routes).
-- the well-known and OAuth endpoints → its own internal handlers.
+Hook this into `defaultHandler` before any other routing. The lib's bare-endpoint handler already returns the same payload (built from `resourceMetadata`), so the three responses agree.
 
-**Trailing-slash invariant carries over.** Both `/mcp` and `/mcp/`
-must reach the MCP agent; the protected-resource doc must advertise
-`resource: ".../mcp"` (no trailing slash); the WWW-Authenticate must
-point to `.../oauth-protected-resource/mcp` (no trailing slash). The
-`apiHandlers` map above plus serving the protected-resource doc at
-both `/mcp` and `/mcp/` suffix paths covers this. Workers OAuth
-Provider lets us override the metadata URL builder if needed.
+The actual `/mcp` and `/mcp/` endpoints are both in `apiHandlers`, so requests to either form land at the MCP agent without 307s. This is the same rule as the FastMCP fix — the surface is different, but the invariant is identical.
 
-## Data layer
+---
 
-### KV — OAuth state
+## 7. Data layer
 
-One KV namespace, `NEXUS_OAUTH`, owned by `workers-oauth-provider`.
-Keys it manages (we don't touch them directly):
+### 7.1 Hyperdrive + Supabase Postgres
 
-| Prefix | TTL | Purpose |
-|---|---|---|
-| `client:<client_id>` | none | DCR-registered clients |
-| `code:<code>` | 5 min | Authorization codes |
-| `token:<access_token>` | 1 hour | Active access tokens |
-| `refresh:<refresh_token>` | 30 days | Refresh tokens |
-| `grant:<grant_id>` | session-bound | Active user grants |
+Hyperdrive points at Supabase's transaction-mode pooler URL (port 6543). Transaction mode is the only mode Hyperdrive officially supports, and it's the right choice for short-lived edge requests.
 
-The five existing `oauth_*` Postgres tables are deleted post-cutover.
-
-A second KV namespace, `NEXUS_JWKS`, caches the Supabase JWKS document
-with `expirationTtl: 86400`. Single key: `supabase:jwks`.
-
-### Hyperdrive — fitness data
-
-Hyperdrive binding `NEXUS_DB` pointing at the existing Supabase
-Postgres pooler URL. Worker code uses `postgres` (the `postgres.js`
-client, which works on Workers via `connect()`) over the Hyperdrive
-binding:
+**Transaction mode does not support prepared statements.** `postgres.js` prepares by default, so we must opt out. Single rule, written down so nobody re-enables it:
 
 ```ts
 // data/db.ts
 import postgres from "postgres";
 
+let _sql: ReturnType<typeof postgres> | null = null;
+
 export function sql(env: Env) {
-  return postgres(env.NEXUS_DB.connectionString, {
-    // Hyperdrive multiplexes; one connection per worker is fine.
-    max: 1,
+  if (_sql) return _sql;
+  _sql = postgres(env.NEXUS_DB.connectionString, {
+    // Supabase transaction pooler — required, not optional.
+    prepare: false,
+    max: 5,
     fetch_types: false,
   });
+  return _sql;
 }
 ```
 
-Tables (unchanged): `users`, `entries`, `friendships`.
+If you find yourself wanting prepared statements (`postgres.js` warns on a missing `prepare: false`), don't enable them — switch the Hyperdrive backing URL to Supabase's session pooler (port 5432), document that here, and accept the connection-pool cost.
 
-Hyperdrive's value here is connection pooling at the edge — Supabase
-Postgres connection setup costs ~100ms; Hyperdrive amortizes it across
-isolates in the same PoP.
+Tables stay where they are: `users`, `entries`, `friendships`. Queries are direct SQL via `postgres.js`. No ORM, same shape as the Python `Store` class but in TS.
 
-## Routes
+### 7.2 OAuth state in `OAUTH_KV`
 
-| Path | Method | Handled by | Notes |
+Owned by `workers-oauth-provider`. Key layout (informational — we never touch these directly):
+
+| Prefix | TTL | Purpose |
+|---|---|---|
+| `client:<id>` | 90 days (`clientRegistrationTTL`) | RFC 7591 dynamically registered clients |
+| `code:<code>` | ~5 min | Authorization codes |
+| `token:<token>` | 1 hour (`accessTokenTTL`) | Access tokens |
+| `refresh:<token>` | 30 days (`refreshTokenTTL`) | Refresh tokens |
+| `grant:<id>` | until revoked | Active user grants (props + scope) |
+
+### 7.3 Auxiliary state in `NEXUS_CACHE`
+
+Our own KV namespace for things the OAuth lib doesn't own.
+
+| Key | TTL | Purpose |
+|---|---|---|
+| `supabase:jwks` | 24h | Cached Supabase JWKS — avoids a fetch on every consent submission |
+| `consent:<nonce>` | 10 min | Stashed `parseAuthRequest` result during sign-in (§4.3) |
+
+---
+
+## 8. The PyPI CLI's six REST endpoints
+
+The `nexus` CLI (`pip install nexus-fitness`) talks to six routes today. All six need to exist on the Worker — missing `/api/v1/auth/config` would break `nexus login` at the first step.
+
+| Path | Method | Purpose | Auth |
 |---|---|---|---|
-| `/mcp` | GET, POST, DELETE | `NexusMcpAgent.serve` | Streamable HTTP, canonical |
-| `/mcp/` | GET, POST, DELETE | `NexusMcpAgent.serve` | Alias — RCA doc |
-| `/sse` | GET, POST | `NexusMcpAgent.serveSSE` | Legacy SSE transport (optional) |
-| `/authorize` | GET | OAuthProvider → `/oauth/consent` | 302 |
-| `/token` | POST | OAuthProvider | RFC 8707 `resource` echoed into `aud` |
-| `/register` | POST | OAuthProvider | DCR |
-| `/oauth/consent` | GET | upstream-handler | Supabase sign-in UI |
-| `/oauth/decision` | POST | upstream-handler | Approve/deny |
-| `/auth/callback` | GET | upstream-handler | Supabase OAuth callback |
-| `/.well-known/oauth-authorization-server` | GET | OAuthProvider | |
-| `/.well-known/openid-configuration` | GET | OAuthProvider (mirror of above) | |
-| `/.well-known/oauth-protected-resource` | GET | OAuthProvider | bare |
-| `/.well-known/oauth-protected-resource/mcp` | GET | OAuthProvider | path-suffixed |
-| `/.well-known/oauth-protected-resource/mcp/` | GET | OAuthProvider | trailing-slash variant |
-| `/.well-known/openai-apps-challenge` | GET | static binding | Apex (required by OpenAI submission) |
-| `/health` | GET | upstream-handler | DB ping via Hyperdrive |
-| `/` | GET | upstream-handler | JSON `name`/`version`/`tools` |
+| `/api/v1/auth/config` | GET | Returns `{ auth_enabled, supabase_url, supabase_publishable_key }` so the CLI can drive its local browser-OAuth flow | none |
+| `/api/v1/me` | GET | Echoes the authenticated user from the bearer | bearer |
+| `/api/v1/log` | POST | Same shape as `log_fitness_entries` tool | bearer |
+| `/api/v1/history` | GET | Same shape as `get_fitness_history` tool | bearer |
+| `/api/v1/update` | POST | Same shape as `update_fitness_entry` tool | bearer |
+| `/api/v1/friends` | POST | Same shape as `manage_friend_connections` tool | bearer |
 
-REST `/api/v1/*` (used by the PyPI CLI today) — keep all five
-endpoints, port the Python handlers as small fetch handlers in
-`upstream-handler.ts`. CLI flow stays: login via browser → CLI
-exchanges code → CLI calls `/api/v1/*` with bearer.
+Bearer tokens for the REST path are the same OAuth access tokens the MCP path uses — same `OAUTH_KV` lookup, same `props`. Implemented in `handlers/rest-api.ts`; the bearer validation goes through the same lib middleware applied via `apiHandlers` (so the REST routes go in `apiHandlers` too, not `defaultHandler`):
 
-## wrangler.jsonc
+```ts
+apiHandlers: {
+  "/mcp": NexusMcpAgent.serve("/mcp"),
+  "/mcp/": NexusMcpAgent.serve("/mcp/"),
+  "/sse": NexusMcpAgent.serveSSE("/sse"),
+  "/api/v1/log":      { fetch: restLog },
+  "/api/v1/history":  { fetch: restHistory },
+  "/api/v1/update":   { fetch: restUpdate },
+  "/api/v1/friends":  { fetch: restFriends },
+  "/api/v1/me":       { fetch: restMe },
+},
+```
+
+`/api/v1/auth/config` is **unauthenticated** so it goes in `defaultHandler`, not `apiHandlers`.
+
+---
+
+## 9. `wrangler.jsonc`
 
 ```jsonc
 {
@@ -406,90 +521,145 @@ exchanges code → CLI calls `/api/v1/*` with bearer.
   "main": "src/index.ts",
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat"],
+
   "kv_namespaces": [
-    { "binding": "NEXUS_OAUTH", "id": "<created via wrangler kv:namespace create>" },
-    { "binding": "NEXUS_JWKS",  "id": "<created via wrangler kv:namespace create>" }
+    { "binding": "OAUTH_KV",     "id": "<wrangler kv namespace create OAUTH_KV>" },
+    { "binding": "NEXUS_CACHE",  "id": "<wrangler kv namespace create NEXUS_CACHE>" }
   ],
+
   "hyperdrive": [
-    { "binding": "NEXUS_DB", "id": "<created via wrangler hyperdrive create>" }
+    { "binding": "NEXUS_DB", "id": "<wrangler hyperdrive create nexus-db --connection-string ...>" }
   ],
+
   "durable_objects": {
-    "bindings": [
-      { "name": "MCP_AGENT", "class_name": "NexusMcpAgent" }
-    ]
+    "bindings": [{ "name": "MCP_AGENT", "class_name": "NexusMcpAgent" }]
   },
+
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["NexusMcpAgent"] }
   ],
+
   "routes": [
     { "pattern": "nexus.kushalsm.com/*", "custom_domain": true }
   ],
+
   "vars": {
     "SUPABASE_URL": "https://<project>.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "<anon key>",
     "BASE_URL": "https://nexus.kushalsm.com"
+  },
+
+  "assets": {
+    "directory": "./static",
+    "binding": "ASSETS"
   }
 }
 ```
 
 Secrets (`wrangler secret put`):
-- `SUPABASE_SERVICE_ROLE_KEY` — for the DB user side, not auth verification
 
-The Supabase Postgres URL is configured at Hyperdrive create time, not
-in wrangler.jsonc, so the password never lives in the Worker bundle.
+- No Postgres credentials — Hyperdrive stores the connection string at create time. The bundle never sees the password.
+- No Supabase service-role key needed at the Worker layer; we only verify JWTs against JWKS.
 
-## Domain
+Bindings used by the code:
 
-Move `nexus.kushalsm.com` from whatever it currently resolves to onto
-a Cloudflare custom domain bound to the Worker. The existing Cloud Run
-URL (`nexus-tad5z6m6za-el.a.run.app`) keeps working until we delete
-the Cloud Run service — DO NOT delete it until at least one Claude/
-ChatGPT submission cycle has settled, because Anthropic stores the
-discovered metadata URLs and we want a fallback.
+- `env.OAUTH_KV` — required by the lib, hardcoded name.
+- `env.NEXUS_CACHE` — our auxiliary KV.
+- `env.NEXUS_DB` — Hyperdrive.
+- `env.MCP_AGENT` — Durable Object namespace (used internally by `McpAgent.serve`).
+- `env.OAUTH_PROVIDER` — injected by the lib into the defaultHandler's env, exposes `parseAuthRequest` and `completeAuthorization`.
 
-DNS plan:
+---
+
+## 10. Static assets
+
+The `/.well-known/openai-apps-challenge` endpoint must serve the verification token as **plain text** from the apex (OpenAI's verifier ignores subpaths). Workers Assets handles this: place the token in `static/.well-known/openai-apps-challenge` and bind via the `assets` block above. The Worker won't even execute for that route — Assets serves it directly.
+
+Privacy policy and usage docs live on the marketing site at `nexus.kushalsm.com` (separate static site), not in the Worker.
+
+---
+
+## 11. Domain plan
+
+`nexus.kushalsm.com` becomes the Worker custom domain. The existing Cloud Run URL keeps working until at least one full Claude/ChatGPT submission review settles — once a partner directory has recorded our URLs, breaking them is expensive.
+
+DNS cutover, in order:
+
 1. Add `nexus.kushalsm.com` as a Workers custom domain.
-2. Update `BASE_URL` env var on the Worker to `https://nexus.kushalsm.com`.
-3. Update the PyPI CLI's `DEFAULT_BASE_URL` in a new release.
-4. Update `nexus.kushalsm.com`'s landing page to point connector links
-   at `https://nexus.kushalsm.com/mcp`.
+2. Configure Hyperdrive to point at Supabase.
+3. Set Worker `vars.BASE_URL` to `https://nexus.kushalsm.com`.
+4. Update PyPI CLI `DEFAULT_BASE_URL` constant → cut a `nexus-fitness` patch release.
+5. Update landing page connector links to point at `https://nexus.kushalsm.com/mcp`.
+6. Resubmit (or update) Claude and ChatGPT directory entries to the new URL.
+7. After one week of healthy traffic, delete the Cloud Run service and the five `oauth_*` Postgres tables.
 
-## Cutover
+The Cloud Run URL keeps responding throughout. Users with active sessions issued by Cloud Run keep them; their access tokens expire within an hour and new tokens come from the Worker. No flag day.
 
-Run both stacks in parallel. The Worker is a new domain; old tokens
-issued by the Cloud Run server are not portable to the Worker (different
-KV vs Postgres storage, different signing). That's fine — users
-re-authenticate once.
+---
 
-Order:
-1. Stand up the Worker on a `nexus-mcp.kushalsm.workers.dev` subdomain
-   (workers.dev hostname is automatic). Run the full curl checklist
-   from `mcp-path-trailing-slash.md` against it.
-2. Add `nexus.kushalsm.com` as a custom domain on the Worker.
-3. Add Nexus to Claude / ChatGPT pointing at `https://nexus.kushalsm.com/mcp`.
-   Walk OAuth, log a workout, fetch history. Verify against curl.
-4. Update PyPI CLI default base URL → publish `nexus-fitness` patch.
-5. Once a week of traffic confirms the Worker is healthy, delete the
-   Cloud Run service and the `oauth_*` Postgres tables.
+## 12. Tests
 
-## What stays Python
+The slash invariant earned a test suite the hard way; the Worker carries that suite forward and adds the OAuth flow.
 
-The PyPI CLI (`pip install nexus-fitness`) is unchanged conceptually:
-- Local OAuth browser flow — pops a localhost callback, exchanges
-  the code at `/token`, stores `~/.config/nexus/credentials.json`.
-- HTTP calls to `/api/v1/*`.
+`test/protected-resource.spec.ts`:
 
-Drop `[server]` extras from `pyproject.toml` — no more FastMCP /
-psycopg dependency. CLI becomes a stdlib-only package.
+- All three protected-resource URLs return the same payload, with `resource: "https://nexus.kushalsm.com/mcp"` (no trailing slash).
+- Both `/mcp` and `/mcp/` return 401 with a `WWW-Authenticate` header whose `resource_metadata` URL has no trailing slash.
 
-## Things this doc deliberately doesn't decide
+`test/oauth.spec.ts`:
 
-- **D1 vs continuing with Supabase Postgres long-term.** D1 + R2 is a
-  pure-Cloudflare future where we drop Supabase entirely. Not part of
-  this migration — that's a separate technical decision once the
-  Workers stack is stable.
-- **Session state beyond authentication.** McpAgent gives us DO storage
-  per session; we're not using it yet. When elicitation / sampling
-  matter, that's where they go.
-- **Rate limiting / abuse.** Cloudflare's WAF + Workers Rate Limiting
-  binding. Bolt on after launch.
+- `GET /authorize?...` returns 302 to `/authorize/<nonce>`.
+- `GET /authorize/<nonce>` returns the consent HTML and the nonce is in KV.
+- `POST /oauth/decision` with a valid Supabase JWT returns `{ redirect_to: "<client_redirect>?code=..." }` and stores a grant in `OAUTH_KV` with `props.userId` set.
+- `POST /token` with the resulting code returns an access token; bearer it back to `/api/v1/me` and get `{ user_id, display_name }` matching the Supabase claims.
+
+`test/tools.spec.ts`:
+
+- All four tools, including the friends graph (add → accept → list → remove).
+- Hyperdrive is mocked to a Miniflare-managed Postgres via the Cloudflare Vitest pool.
+
+All tests run via `@cloudflare/vitest-pool-workers`, no separate Miniflare config.
+
+---
+
+## 13. Non-decisions
+
+Three things the doc deliberately doesn't resolve, to keep this migration scoped:
+
+- **D1 vs continuing on Supabase Postgres long-term.** A pure-Cloudflare future (D1 for entries, R2 for any blob) is a separate decision, made once the Workers stack is stable.
+- **MCP session state beyond authentication.** McpAgent's DO storage exists. We don't write to it yet. When elicitation / sampling matter, that's the place.
+- **Rate limiting and abuse controls.** Cloudflare's WAF and Rate Limiting bindings sit at the request layer. Wire them on after launch with real traffic shape data.
+
+---
+
+## 14. Verifications carried forward from the FastMCP version
+
+Anything the FastMCP server got right has to keep working on Workers. The non-negotiable list, checked via curl against the deployed Worker before declaring cutover complete:
+
+```bash
+B=https://nexus.kushalsm.com
+
+# Both endpoint forms 401, no 307
+curl -sS -i $B/mcp  | grep -E '^(HTTP|www-authenticate)'
+curl -sS -i $B/mcp/ | grep -E '^(HTTP|www-authenticate)'
+
+# All three protected-resource URLs return the same no-slash `resource`
+curl -sS $B/.well-known/oauth-protected-resource     | jq .resource
+curl -sS $B/.well-known/oauth-protected-resource/mcp | jq .resource
+curl -sS $B/.well-known/oauth-protected-resource/mcp/ | jq .resource
+
+# OAuth metadata
+curl -sS $B/.well-known/oauth-authorization-server | jq
+
+# OpenAI domain verification at apex (not under /mcp)
+curl -sS $B/.well-known/openai-apps-challenge
+
+# Health, root
+curl -sS $B/health
+curl -sS $B/        | jq
+
+# CLI bootstrap
+curl -sS $B/api/v1/auth/config | jq
+```
+
+Every line must produce the same shape it produces against the current Cloud Run host today. If anything changes — even cosmetic — that's a real regression: the PyPI CLI and the submitted directory entries depend on these shapes.
