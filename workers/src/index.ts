@@ -29,8 +29,8 @@ export default new OAuthProvider({
     // Canonical resource identifier, advertised to all clients regardless of
     // which protected-resource URL variant they fetch. See
     // docs/mcp-path-trailing-slash.md — must remain the no-slash form.
-    resource: "https://nexus-mcp.kushalsokke.workers.dev/mcp",
-    authorization_servers: ["https://nexus-mcp.kushalsokke.workers.dev"],
+    resource: "https://mcp.nexus.kushalsm.com/mcp",
+    authorization_servers: ["https://mcp.nexus.kushalsm.com"],
     scopes_supported: ["openid", "profile", "email"],
     bearer_methods_supported: ["header"],
     resource_name: "Nexus",

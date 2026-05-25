@@ -22,7 +22,13 @@
     { "tag": "v1", "new_sqlite_classes": ["NexusMcpAgent"] }
   ],
 
+  "workers_dev": true,
+
+  "routes": [
+    { "pattern": "mcp.nexus.kushalsm.com", "custom_domain": true }
+  ],
+
   "vars": {
-    "BASE_URL": "https://nexus-mcp.kushalsokke.workers.dev"
+    "BASE_URL": "https://mcp.nexus.kushalsm.com"
   }
 }

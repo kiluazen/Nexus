@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
-DEFAULT_BASE_URL = "https://nexus-tad5z6m6za-el.a.run.app"
+DEFAULT_BASE_URL = "https://mcp.nexus.kushalsm.com"
 CONFIG_DIR = Path.home() / ".config" / "nexus"
 CREDENTIALS_PATH = CONFIG_DIR / "credentials.json"
 
