@@ -39,44 +39,56 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       displayName: this.props!.displayName,
     });
 
-    this.server.tool(
+    this.server.registerTool(
       "log_fitness_entries",
-      "Store workout, meal, or body-weight entries for the authenticated Nexus user.",
-      LogInput.shape,
-      { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      {
+        title: "Log fitness entries",
+        description: "Store workout, meal, or body-weight entries for the authenticated Nexus user.",
+        inputSchema: LogInput.shape,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
       async (args) => {
         const r = await safe(() => logEntries(this.env, user(), args));
         return r.ok ? textResult(r.value) : errorResult(r.error);
       },
     );
 
-    this.server.tool(
+    this.server.registerTool(
       "get_fitness_history",
-      "Fetch workouts, meals, body-weight entries, exercise keys, and friend-shared history for the authenticated Nexus user.",
-      HistoryInput.shape,
-      { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      {
+        title: "Get fitness history",
+        description: "Fetch workouts, meals, body-weight entries, exercise keys, and friend-shared history for the authenticated Nexus user.",
+        inputSchema: HistoryInput.shape,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
       async (args) => {
         const r = await safe(() => getHistory(this.env, user(), args));
         return r.ok ? textResult(r.value) : errorResult(r.error);
       },
     );
 
-    this.server.tool(
+    this.server.registerTool(
       "update_fitness_entry",
-      "Replace one existing workout, meal, or body-weight entry owned by the authenticated Nexus user.",
-      UpdateInput.shape,
-      { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      {
+        title: "Update fitness entry",
+        description: "Replace one existing workout, meal, or body-weight entry owned by the authenticated Nexus user.",
+        inputSchema: UpdateInput.shape,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
       async (args) => {
         const r = await safe(() => updateEntry(this.env, user(), args));
         return r.ok ? textResult(r.value) : errorResult(r.error);
       },
     );
 
-    this.server.tool(
+    this.server.registerTool(
       "manage_friend_connections",
-      "List, add, accept, reject, or remove Nexus friend connections for shared fitness history.",
-      FriendsInput.shape,
-      { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      {
+        title: "Manage friend connections",
+        description: "List, add, accept, reject, or remove Nexus friend connections for shared fitness history.",
+        inputSchema: FriendsInput.shape,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, user(), args));
         return r.ok ? textResult(r.value) : errorResult(r.error);

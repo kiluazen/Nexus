@@ -29,6 +29,8 @@
   ],
 
   "vars": {
-    "BASE_URL": "https://mcp.nexus.kushalsm.com"
+    "BASE_URL": "https://mcp.nexus.kushalsm.com",
+    "SUPABASE_URL": "https://addyzjpcjifdytkiqepa.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHl6anBjamlmZHl0a2lxZXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NTA2ODMsImV4cCI6MjA4OTMyNjY4M30.UXSeG9MHauTajNcgU7isXzuYBkC-N6cBux6Pp2X3z80"
   }
 }

@@ -1,11 +1,13 @@
 export function callbackHtml(opts: {
   nonce: string;
+  clientName: string;
   supabaseUrl: string;
   publishableKey: string;
   baseUrl: string;
 }): string {
   const payload = JSON.stringify({
     nonce: opts.nonce,
+    clientName: opts.clientName,
     supabaseUrl: opts.supabaseUrl,
     publishableKey: opts.publishableKey,
     baseUrl: opts.baseUrl,
@@ -41,6 +43,7 @@ const TEMPLATE = `<!doctype html>
     <img class="bg-img" src="https://kushalsm.com/playground_pic.png" alt="" />
     <main>
       <h1>Nexus</h1>
+      <p id="subtitle"></p>
       <p id="status"><span class="spinner"></span>Connecting...</p>
       <pre id="error" hidden></pre>
     </main>
@@ -49,13 +52,14 @@ const TEMPLATE = `<!doctype html>
       const client = window.supabase.createClient(config.supabaseUrl, config.publishableKey, {
         auth: { autoRefreshToken: false, persistSession: true, detectSessionInUrl: false, flowType: "pkce" }
       });
+      document.getElementById("subtitle").textContent = "Connect Nexus to " + config.clientName + ".";
 
       async function init() {
         const statusEl = document.getElementById("status");
         const code = new URLSearchParams(window.location.search).get("code");
         if (!code) throw new Error("Missing code.");
 
-        statusEl.innerHTML = '<span class="spinner"></span>Signing in...';
+        statusEl.innerHTML = '<span class="spinner"></span>Signing you in…';
         const { error } = await client.auth.exchangeCodeForSession(code);
         if (error) throw error;
 
@@ -63,7 +67,7 @@ const TEMPLATE = `<!doctype html>
         const accessToken = data.session?.access_token;
         if (!accessToken) throw new Error("Session not established.");
 
-        statusEl.innerHTML = '<span class="spinner"></span>Redirecting...';
+        statusEl.innerHTML = '<span class="spinner"></span>Connecting to ' + config.clientName + '…';
         const response = await fetch(config.baseUrl + "/oauth/decision", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -75,8 +79,9 @@ const TEMPLATE = `<!doctype html>
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || response.statusText);
+        statusEl.innerHTML = '<span class="spinner"></span>Connected. Returning you to ' + config.clientName + '…';
         window.location.assign(payload.redirect_to);
-        setTimeout(() => window.close(), 1000);
+        setTimeout(() => window.close(), 1500);
       }
       init().catch((error) => {
         document.getElementById("status").textContent = "Something went wrong.";

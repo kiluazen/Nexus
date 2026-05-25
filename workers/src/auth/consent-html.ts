@@ -1,11 +1,13 @@
 export function consentHtml(opts: {
   nonce: string;
+  clientName: string;
   supabaseUrl: string;
   publishableKey: string;
   baseUrl: string;
 }): string {
   const payload = JSON.stringify({
     nonce: opts.nonce,
+    clientName: opts.clientName,
     supabaseUrl: opts.supabaseUrl,
     publishableKey: opts.publishableKey,
     baseUrl: opts.baseUrl,
@@ -59,6 +61,7 @@ const TEMPLATE = `<!doctype html>
     <img class="bg-img" src="https://kushalsm.com/playground_pic.png" alt="" />
     <main>
       <h1>Nexus</h1>
+      <p id="subtitle"></p>
       <p id="status">Loading...</p>
       <div id="login-actions" hidden>
         <button class="primary" id="login">Continue with Google</button>
@@ -90,7 +93,9 @@ const TEMPLATE = `<!doctype html>
         }
       });
       const statusEl = document.getElementById("status");
+      const subtitleEl = document.getElementById("subtitle");
       const errorEl = document.getElementById("error");
+      subtitleEl.textContent = "Connect Nexus to " + config.clientName + ".";
       const loginActions = document.getElementById("login-actions");
       const loginButton = document.getElementById("login");
       const emailForm = document.getElementById("email-form");
@@ -104,12 +109,17 @@ const TEMPLATE = `<!doctype html>
         errorEl.textContent = message;
       }
 
-      async function decideApprove() {
-        statusEl.innerHTML = '<span class="spinner"></span>Connecting...';
+      async function decideApprove(hadExistingSession) {
+        const target = config.clientName;
+        if (hadExistingSession) {
+          statusEl.innerHTML = '<span class="spinner"></span>Found your Nexus session. Connecting to ' + target + '…';
+        } else {
+          statusEl.innerHTML = '<span class="spinner"></span>Connecting to ' + target + '…';
+        }
         loginActions.hidden = true;
         const { data } = await client.auth.getSession();
         const accessToken = data.session?.access_token;
-        if (!accessToken) throw new Error("No session found.");
+        if (!accessToken) throw new Error("No Nexus session found.");
         const response = await fetch(config.baseUrl + "/oauth/decision", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -121,9 +131,9 @@ const TEMPLATE = `<!doctype html>
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || response.statusText);
-        statusEl.innerHTML = '<span class="spinner"></span>Redirecting...';
+        statusEl.innerHTML = '<span class="spinner"></span>Connected. Returning you to ' + target + '…';
         window.location.assign(payload.redirect_to);
-        setTimeout(() => window.close(), 1000);
+        setTimeout(() => window.close(), 1500);
       }
 
       loginButton.addEventListener("click", async () => {
@@ -165,10 +175,10 @@ const TEMPLATE = `<!doctype html>
         }
         const { data } = await client.auth.getSession();
         if (data.session) {
-          try { await decideApprove(); } catch (err) { setError(err.message || String(err)); }
+          try { await decideApprove(true); } catch (err) { setError(err.message || String(err)); }
           return;
         }
-        statusEl.textContent = "Sign in to connect Nexus.";
+        statusEl.textContent = "Sign in to your Nexus account.";
         loginActions.hidden = false;
         emailForm.style.display = "block";
       }

@@ -135,8 +135,8 @@ For terminal use without an MCP client:
 
 ```sh
 pip install nexus-fitness
-nexus login                            # opens browser for Google login
-nexus log "did 3x10 squats at 60kg"    # log via natural language
+nexus auth login                       # opens browser for Google login
+nexus log --entries '[{"type":"workout","exercise":"Squat","exercise_key":"squat","sets":[{"weight_kg":60,"reps":10},{"weight_kg":60,"reps":10},{"weight_kg":60,"reps":10}]}]'
 nexus history                          # last 7 days
 ```
 

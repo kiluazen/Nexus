@@ -25,6 +25,7 @@ export default new OAuthProvider({
   tokenEndpoint: "/token",
   clientRegistrationEndpoint: "/register",
   scopesSupported: ["openid", "profile", "email"],
+  allowPlainPKCE: false,
   resourceMetadata: {
     // Canonical resource identifier, advertised to all clients regardless of
     // which protected-resource URL variant they fetch. See

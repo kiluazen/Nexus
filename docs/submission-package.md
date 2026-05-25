@@ -11,8 +11,8 @@ connector / app directories. Track items as they're complete.
 | OAuth 2.1 with PKCE | ✅ | workers-oauth-provider on Workers |
 | Dynamic Client Registration | ✅ | `/register` (lib-owned) |
 | Tool `title` / annotations (readOnlyHint / destructiveHint / openWorldHint) | ✅ | `workers/src/mcp.ts` |
-| Privacy policy URL | ✅ (draft) | `docs/privacy-policy.md` — needs to be hosted at a public URL |
-| Public usage docs (3-5 examples) | ✅ (draft) | `docs/usage-guide.md` — needs to be hosted at a public URL |
+| Privacy policy URL | ✅ | `https://nexus.kushalsm.com/privacy-policy/` |
+| Public usage docs (3-5 examples) | ✅ | `https://nexus.kushalsm.com/usage-guide/` |
 | Test account with sample data | ✅ | `kushalsokke@gmail.com` (Supabase-issued) — supply read-only creds at submission time, NOT in this doc |
 | Origin validation on MCP endpoint | ⏳ | TODO: tighten `Origin` header check on `/mcp` |
 | Connector branding (logo, name, short description) | ⏳ | `nexus.kushalsm.com` favicon exists; need 256×256 PNG |
@@ -26,12 +26,12 @@ read/destructive/openWorld hints.
 | Item | Status | Where it lives |
 |---|---|---|
 | MCP URL | ✅ | `https://mcp.nexus.kushalsm.com/mcp` |
-| Domain verification (`/.well-known/openai-apps-challenge` at apex, plain text) | ✅ — but currently lives at `mcp.nexus.kushalsm.com/.well-known/...`, not the apex `kushalsm.com`. Need to decide which apex OpenAI verifies against, and serve it there. |
+| Domain verification (`/.well-known/openai-apps-challenge` on the MCP host, plain text) | ✅ | `https://mcp.nexus.kushalsm.com/.well-known/openai-apps-challenge` |
 | OAuth 2.1 + S256 PKCE | ✅ | workers-oauth-provider on Workers |
-| Privacy policy + company URL | ✅ (draft) | needs public URL |
-| Screenshots | ⏳ | TODO |
-| Test prompts with expected responses | ⏳ | TODO — draft 3-5 |
-| Demo OAuth credentials (no MFA) | ⏳ | will need to be supplied at submission time |
+| Privacy policy + company URL | ✅ | `https://nexus.kushalsm.com/privacy-policy/`, `https://nexus.kushalsm.com/` |
+| Screenshots | ✅ | `app_screenshot.png` and `landing/public/assets/app-screenshot.png` |
+| Test prompts with expected responses | ✅ | Use the examples in `https://nexus.kushalsm.com/usage-guide/` plus the Testing section draft below |
+| Demo OAuth credentials (no MFA) | ✅ | OAuth supports email/password on the Nexus consent page; supply reviewer account credentials in the form, not this repo |
 | `resource` parameter echoed into token `aud` claim | ✅ | workers-oauth-provider does this; verify at test time |
 | Identity verification on platform.openai.com | ⏳ (user action) | Kushal needs to complete this on his OpenAI account |
 
@@ -39,32 +39,52 @@ The known OpenAI domain-verification one-shot bug applies: get the
 verification file in place BEFORE clicking submit; the retry button often
 fails to re-ping.
 
-## Subdomain question to decide
+## Domain verification
 
-We currently serve domain-verification at `mcp.nexus.kushalsm.com`. OpenAI's
-verifier hits the apex of the domain the MCP URL is on — i.e. it'll fetch
-`mcp.nexus.kushalsm.com/.well-known/openai-apps-challenge`. Our Worker
-serves that already.
+The MCP URL host is `mcp.nexus.kushalsm.com`, and the Worker serves the
+OpenAI challenge at:
 
-If OpenAI's verifier turns out to require the registered-domain apex
-(`kushalsm.com/.well-known/openai-apps-challenge`), we need a separate
-deployment there. Check by running the submission and watching the
-verification network call before submitting for real.
+```
+https://mcp.nexus.kushalsm.com/.well-known/openai-apps-challenge
+```
 
-## Hosting the docs publicly
+Verify this with curl before every submission attempt. If the platform asks
+for a different host, add the same plain-text route to that host before
+retrying.
 
-The privacy policy and usage guide need stable URLs in the submission
-forms. Three options, technical merit only:
+## Public URLs
 
-1. Host them as static pages on `nexus.kushalsm.com/privacy` and
-   `nexus.kushalsm.com/usage`. Existing Pages site, just add routes. **Best
-   — keeps marketing site as the canonical face.**
-2. Bake them into the Worker as routes. Couples docs to deploy cycle —
-   worse.
-3. Render them from a GitHub Pages or Notion page. Adds an external host
-   the submission reviewer might mistrust — worse.
+- Company URL: `https://nexus.kushalsm.com/`
+- MCP URL: `https://mcp.nexus.kushalsm.com/mcp`
+- Privacy policy: `https://nexus.kushalsm.com/privacy-policy/`
+- Terms: `https://nexus.kushalsm.com/terms-of-service/`
+- Usage guide: `https://nexus.kushalsm.com/usage-guide/`
 
-Pick (1). Static files live in the existing landing repo.
+## ChatGPT testing form draft
+
+Test credentials:
+
+```
+Nexus uses OAuth. On the Nexus consent screen, use the supplied reviewer email/password credentials. The account has no MFA, no payment requirement, and sample data is optional because the first two test cases create data.
+```
+
+Test cases:
+
+| Scenario | Prompt | Tools | Expected output |
+|---|---|---|---|
+| User logs a strength training session | `I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7, and 55kg for 6. Also did 10 minutes on the treadmill.` | `log_fitness_entries` | Server returns workout entry IDs, `exercise_key` values, set counts, and duration for treadmill. ChatGPT confirms the workout was logged. |
+| User logs a meal from natural language | `I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it.` | `log_fitness_entries` | Server returns a meal entry ID, item-level foods, estimated calories/macros, and server-computed totals. |
+| User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `get_fitness_history`, `update_fitness_entry` | ChatGPT finds the entry, sends the full replacement data, and confirms the update result with the corrected rep count. |
+| User checks their friend code | `What's my Nexus friend code?` | `manage_friend_connections` | Server returns `your_code`, current friends, and pending requests. ChatGPT shows the friend code. |
+| User asks for today's summary | `What did I eat and do today?` | `get_fitness_history` | Server returns today's workouts, meals, weights, and day totals. ChatGPT summarizes the day. |
+
+Negative cases:
+
+| Scenario | Prompt | Expected behavior |
+|---|---|---|
+| General fitness education | `What is hypertrophy?` | ChatGPT answers from general knowledge; no Nexus tool call. |
+| Nutrition advice without logging | `How much protein should I eat per day to build muscle?` | ChatGPT answers from general knowledge; no Nexus tool call. |
+| Tracking outside Nexus scope | `I slept 7 hours last night and I'm feeling stressed today.` | ChatGPT responds conversationally; no Nexus tool call. |
 
 ## Codex marketplace
 

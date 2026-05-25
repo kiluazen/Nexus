@@ -48,25 +48,6 @@ export default {
       return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
     }
 
-    if (path === "/db-test") {
-      const { Client } = await import("pg");
-      const cs = env.NEXUS_DB.connectionString;
-      const c = new Client({ connectionString: cs, ssl: false });
-      const t0 = Date.now();
-      try {
-        console.log("db-test: connecting...");
-        await c.connect();
-        console.log("db-test: connected in", Date.now() - t0, "ms");
-        const r = await c.query("SELECT 1 AS ok, current_database() AS db, version() AS v");
-        return Response.json({ ok: true, ms: Date.now() - t0, row: r.rows[0] });
-      } catch (e) {
-        console.error("db-test error:", e);
-        return Response.json({ ok: false, ms: Date.now() - t0, error: String(e) }, { status: 500 });
-      } finally {
-        _ctx.waitUntil(c.end().catch(() => {}));
-      }
-    }
-
     if (path === "/") {
       return Response.json({
         name: "Nexus",
