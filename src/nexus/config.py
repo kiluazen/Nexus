@@ -22,7 +22,7 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             database_url=os.getenv("NEXUS_DATABASE_URL", os.getenv("NIPP_DATABASE_URL", os.getenv("DATABASE_URL"))),
-            mcp_path=_normalize_path(os.getenv("NEXUS_MCP_PATH", os.getenv("NIPP_MCP_PATH", "/mcp/"))),
+            mcp_path=_normalize_path(os.getenv("NEXUS_MCP_PATH", os.getenv("NIPP_MCP_PATH", "/mcp"))),
             host=os.getenv("NEXUS_HOST", os.getenv("NIPP_HOST", "0.0.0.0")),
             port=int(os.getenv("PORT", os.getenv("NEXUS_PORT", os.getenv("NIPP_PORT", "8000")))),
             base_url=_normalize_optional_url(os.getenv("NEXUS_BASE_URL", os.getenv("NIPP_BASE_URL"))),
@@ -50,10 +50,16 @@ class Settings:
 
 
 def _normalize_path(path: str) -> str:
+    """Ensure leading slash, strip trailing slash. Canonical form: '/mcp', not '/mcp/'.
+
+    RFC 8707 expects the resource identifier to match exactly what clients
+    request. Most MCP clients (Claude, ChatGPT, mcp-remote) hit '/mcp' with
+    no trailing slash, so that is what we advertise.
+    """
     if not path.startswith("/"):
         path = f"/{path}"
-    if not path.endswith("/"):
-        path = f"{path}/"
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
     return path
 
 

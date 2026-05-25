@@ -7,3 +7,5 @@ build/
 *.pyc
 *.egg-info/
 *.md
+!docs/**/*.md
+!README.md

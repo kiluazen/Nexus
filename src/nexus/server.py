@@ -54,6 +54,43 @@ async def health(_: Request) -> PlainTextResponse:
     return PlainTextResponse("ok")
 
 
+@mcp.custom_route("/.well-known/openid-configuration", methods=["GET"])
+async def openid_configuration(_: Request) -> JSONResponse:
+    metadata = _oauth_authorization_server_metadata()
+    if metadata is None:
+        return JSONResponse({"error": "OAuth is not configured."}, status_code=404)
+    return JSONResponse(metadata)
+
+
+async def oauth_authorization_server_metadata(_: Request) -> JSONResponse:
+    metadata = _oauth_authorization_server_metadata()
+    if metadata is None:
+        return JSONResponse({"error": "OAuth is not configured."}, status_code=404)
+    return JSONResponse(metadata, headers={"Cache-Control": "public, max-age=3600"})
+
+
+def _oauth_authorization_server_metadata() -> dict[str, Any] | None:
+    if not settings.base_url:
+        return None
+
+    base_url = settings.base_url.rstrip("/")
+    return {
+        "issuer": f"{base_url}/",
+        "authorization_endpoint": f"{base_url}/authorize",
+        "token_endpoint": f"{base_url}/token",
+        "registration_endpoint": f"{base_url}/register",
+        "scopes_supported": ["openid", "profile", "email"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_methods_supported": [
+            "none",
+            "client_secret_post",
+            "client_secret_basic",
+        ],
+        "code_challenge_methods_supported": ["S256"],
+    }
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def root(_: Request) -> JSONResponse:
     return JSONResponse(
@@ -62,7 +99,12 @@ async def root(_: Request) -> JSONResponse:
             "version": "2.0",
             "mcp_path": settings.mcp_path,
             "auth_enabled": auth is not None,
-            "tools": ["log", "history", "update", "friends"],
+            "tools": [
+                "log_fitness_entries",
+                "get_fitness_history",
+                "update_fitness_entry",
+                "manage_friend_connections",
+            ],
         }
     )
 
@@ -70,7 +112,16 @@ async def root(_: Request) -> JSONResponse:
 # -------------------------------------------------------------------- Tools
 
 
-@mcp.tool
+@mcp.tool(
+    name="log_fitness_entries",
+    title="Log fitness entries",
+    description="Store workout, meal, or body-weight entries for the authenticated Nexus user.",
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "openWorldHint": False,
+    }
+)
 def log(
     entries: list[dict],
     date: str | None = None,
@@ -121,7 +172,16 @@ def log(
         return handle_validation_error(exc)
 
 
-@mcp.tool
+@mcp.tool(
+    name="get_fitness_history",
+    title="Get fitness history",
+    description="Fetch workouts, meals, body-weight entries, exercise keys, and friend-shared history for the authenticated Nexus user.",
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "openWorldHint": False,
+    }
+)
 def history(
     date: str | None = None,
     from_date: str | None = None,
@@ -158,7 +218,16 @@ def history(
         return handle_validation_error(exc)
 
 
-@mcp.tool
+@mcp.tool(
+    name="update_fitness_entry",
+    title="Update fitness entry",
+    description="Replace one existing workout, meal, or body-weight entry owned by the authenticated Nexus user.",
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "openWorldHint": False,
+    }
+)
 def update(
     entry_id: int,
     data: dict,
@@ -181,7 +250,16 @@ def update(
         return handle_validation_error(exc)
 
 
-@mcp.tool
+@mcp.tool(
+    name="manage_friend_connections",
+    title="Manage friend connections",
+    description="List, add, accept, reject, or remove Nexus friend connections for shared fitness history.",
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "openWorldHint": True,
+    }
+)
 def friends(
     action: str,
     code: str | None = None,
@@ -434,23 +512,30 @@ def build_http_app(path: str):
     )
     _add_api_routes(app)
     _add_mcp_alias_route(app, path)
+    _replace_oauth_authorization_server_metadata_route(app)
     _add_protected_resource_alias_routes(app, path)
     return app
 
 
 def _normalize_path(value: str) -> str:
+    """Canonical form: leading slash, no trailing slash ('/mcp', not '/mcp/').
+
+    Stays in sync with Settings._normalize_path. RFC 8707 expects resource
+    identifiers to match exactly what clients request; major MCP clients
+    (Claude, ChatGPT) hit /mcp with no trailing slash, so /mcp is canonical.
+    """
     if not value.startswith("/"):
         value = f"/{value}"
-    if not value.endswith("/"):
-        value = f"{value}/"
+    if value != "/" and value.endswith("/"):
+        value = value.rstrip("/")
     return value
 
 
 def _add_mcp_alias_route(app, path: str) -> None:
+    """Serve the MCP endpoint at both /mcp and /mcp/ so clients with either
+    URL form connect without 307 redirects (which break some MCP clients)."""
     canonical = _normalize_path(path)
-    alias = canonical[:-1] if canonical.endswith("/") else f"{canonical}/"
-    if not alias:
-        return
+    alias = f"{canonical}/"
 
     existing = next((route for route in app.routes if getattr(route, "path", None) == canonical), None)
     if existing is None or any(getattr(route, "path", None) == alias for route in app.routes):
@@ -482,18 +567,47 @@ def _add_api_routes(app) -> None:
             app.router.routes.append(route)
 
 
+def _replace_oauth_authorization_server_metadata_route(app) -> None:
+    metadata = _oauth_authorization_server_metadata()
+    if metadata is None:
+        return
+
+    async def handler(_: Request) -> JSONResponse:
+        return JSONResponse(metadata, headers={"Cache-Control": "public, max-age=3600"})
+
+    async def options_handler(_: Request) -> Response:
+        return Response(status_code=204)
+
+    route_path = "/.well-known/oauth-authorization-server"
+    app.router.routes = [
+        route
+        for route in app.routes
+        if getattr(route, "path", None) != route_path
+    ]
+    app.router.routes.append(
+        Route(route_path, endpoint=handler, methods=["GET"], include_in_schema=False)
+    )
+    app.router.routes.append(
+        Route(route_path, endpoint=options_handler, methods=["OPTIONS"], include_in_schema=False)
+    )
+
+
 def _add_protected_resource_alias_routes(app, path: str) -> None:
+    """Serve identical protected-resource metadata at every URL variant a
+    client might hit: bare /.well-known/oauth-protected-resource, and the
+    RFC 9728 path-suffixed variants both with and without trailing slash.
+
+    The `resource` field in the payload is always the canonical no-slash
+    form (e.g. https://host/mcp), matching what clients request."""
     if not settings.base_url:
         return
 
-    canonical = _normalize_path(path)
-    path_without_trailing = canonical[:-1] if canonical.endswith("/") else canonical
+    canonical = _normalize_path(path)  # '/mcp' (no trailing slash)
 
-    payload = {
-        "resource": f"{settings.base_url}{path_without_trailing}",
-        "authorization_servers": [settings.base_url],
-        "scopes_supported": ["openid", "profile", "email"],
-    }
+    payload = _protected_resource_payload(
+        base_url=settings.base_url,
+        canonical_path=canonical,
+    )
 
     async def handler(_: Request) -> JSONResponse:
         return JSONResponse(payload)
@@ -503,20 +617,32 @@ def _add_protected_resource_alias_routes(app, path: str) -> None:
 
     alias_paths = [
         "/.well-known/oauth-protected-resource",
-        f"/.well-known/oauth-protected-resource{path_without_trailing}",
+        f"/.well-known/oauth-protected-resource{canonical}",
+        f"/.well-known/oauth-protected-resource{canonical}/",
     ]
-    if canonical.endswith("/"):
-        alias_paths.append(f"/.well-known/oauth-protected-resource{canonical}")
+
+    app.router.routes = [
+        route
+        for route in app.routes
+        if getattr(route, "path", None) not in set(alias_paths)
+    ]
 
     for alias in alias_paths:
-        if any(getattr(route, "path", None) == alias for route in app.routes):
-            continue
         app.router.routes.append(
             Route(alias, endpoint=handler, methods=["GET"], include_in_schema=False)
         )
         app.router.routes.append(
             Route(alias, endpoint=options_handler, methods=["OPTIONS"], include_in_schema=False)
         )
+
+
+def _protected_resource_payload(*, base_url: str, canonical_path: str) -> dict[str, Any]:
+    return {
+        "resource": f"{base_url.rstrip('/')}{_normalize_path(canonical_path)}",
+        "authorization_servers": [base_url.rstrip("/")],
+        "scopes_supported": ["openid", "profile", "email"],
+        "resource_documentation": "https://nexus.kushalsm.com/",
+    }
 
 
 def main():

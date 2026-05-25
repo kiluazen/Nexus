@@ -156,6 +156,7 @@ class NexusOAuthProvider(OAuthProvider):
             client_id=client.client_id or "",
             scopes=scopes,
             expires_at=access_expires_at,
+            resource=authorization_code.resource,
             claims=token_payload,
         )
         refresh_token = RefreshToken(
@@ -181,6 +182,7 @@ class NexusOAuthProvider(OAuthProvider):
             payload={
                 "refresh_token": refresh_token.model_dump(mode="json"),
                 "token_payload": token_payload,
+                "resource": authorization_code.resource,
             },
         )
 
@@ -226,6 +228,7 @@ class NexusOAuthProvider(OAuthProvider):
 
         self._delete_row(REFRESH_TOKENS_TABLE, key_column="token", key=refresh_token.token)
         token_payload = raw.get("token_payload", {})
+        resource = raw.get("resource")
 
         access_token_value = secrets.token_urlsafe(48)
         new_refresh_token_value = secrets.token_urlsafe(48)
@@ -237,6 +240,7 @@ class NexusOAuthProvider(OAuthProvider):
             client_id=client.client_id or "",
             scopes=scopes,
             expires_at=access_expires_at,
+            resource=resource,
             claims=token_payload,
         )
         next_refresh_token = RefreshToken(
@@ -261,6 +265,7 @@ class NexusOAuthProvider(OAuthProvider):
             payload={
                 "refresh_token": next_refresh_token.model_dump(mode="json"),
                 "token_payload": token_payload,
+                "resource": resource,
             },
         )
 
@@ -377,6 +382,9 @@ class NexusOAuthProvider(OAuthProvider):
         token_payload = {
             "sub": user_id,
             "email": user_claims.get("email", ""),
+            "name": user_claims.get("name", ""),
+            "preferred_username": user_claims.get("preferred_username", ""),
+            "aud": raw.get("resource"),
         }
         self._upsert_json(
             AUTH_CODES_TABLE,
