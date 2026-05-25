@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nexus",
         description="Nexus – track workouts and nutrition from your terminal.",
     )
-    parser.add_argument("--version", action="version", version="nexus-fitness 2.0.5")
+    parser.add_argument("--version", action="version", version="nexus-fitness 2.1.0")
     subparsers = parser.add_subparsers(dest="command")
 
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
@@ -432,7 +432,12 @@ def _http_json(
         if clean:
             url = f"{url}?{parse.urlencode(clean)}"
 
-    headers: dict[str, str] = {"Accept": "application/json"}
+    # Identify as nexus-cli rather than the default Python-urllib UA, which
+    # Cloudflare's bot filter (Error 1010) blocks on protected origins.
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+        "User-Agent": "nexus-cli/2.1.0",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if body is not None:
