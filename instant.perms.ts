@@ -26,16 +26,26 @@ const rules = {
     },
   },
 
+  // These rules are the real enforcement boundary: a user's bearer is their
+  // InstantDB identity, so they could transact directly against InstantDB
+  // outside our server. The threat is self-granting an 'active' friendship to
+  // read a victim's history. All legitimate friend management goes through
+  // manageFriends(), which runs as admin and bypasses these rules, so we deny
+  // direct friendship writes almost entirely: a self-activated friendship
+  // fails the create rule (status must be pending) and the update rule (only
+  // the addressee may act on a pending request — no self-approval).
   friendships: {
     bind: [
-      'isParty',
-      "auth.id != null && (auth.id in data.ref('requester.id') || auth.id in data.ref('addressee.id'))",
+      'isRequester',
+      "auth.id != null && auth.id in data.ref('requester.id')",
+      'isAddressee',
+      "auth.id != null && auth.id in data.ref('addressee.id')",
     ],
     allow: {
-      view: 'isParty',
-      create: "auth.id != null && auth.id in data.ref('requester.id')",
-      update: 'isParty',
-      delete: 'isParty',
+      view: 'isRequester || isAddressee',
+      create: "isRequester && data.status == 'pending'",
+      update: "isAddressee && data.status == 'pending'",
+      delete: 'isRequester || isAddressee',
     },
   },
 } satisfies InstantRules

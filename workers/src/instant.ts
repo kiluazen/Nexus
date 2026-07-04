@@ -71,6 +71,11 @@ export async function userFromRefreshToken(env: NexusEnv, token: string) {
   }
 }
 
+/** Invalidate a single refresh token (server-side logout). */
+export async function revokeToken(env: NexusEnv, refreshToken: string): Promise<void> {
+  await adminDb(env).auth.signOut({ refresh_token: refreshToken });
+}
+
 /** Mint a short-use token the ChatGPT widget can hand to signInWithToken(). */
 export async function mintWidgetToken(env: NexusEnv, email: string): Promise<string> {
   return adminDb(env).auth.createToken({ email });

@@ -17,6 +17,15 @@ const WIDGET_CSP = {
   resource_domains: ["https://unpkg.com"],
 };
 
+// Shared so the resource registration and the read callback agree — the MCP
+// SDK does not merge registration _meta into read results.
+const WIDGET_META = {
+  "openai/widgetCSP": WIDGET_CSP,
+  "openai/widgetPrefersBorder": true,
+  "openai/widgetDescription":
+    "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
+};
+
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
 Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press", never "bench").
 Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely.
@@ -53,16 +62,29 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
     };
   }
 
-  /** Tool result that also feeds the widget: structuredContent for the model
-   *  and iframe, plus a hidden InstantDB token in _meta (widget-only — the
-   *  model never sees _meta) so the card can go live. */
-  private async widgetResult(payload: Record<string, unknown>) {
-    let token: string | null = null;
+  // One InstantDB token per session, minted lazily. createToken has no TTL or
+  // scope, so minting per call would leak orphan refresh tokens; caching on
+  // the agent instance (one Durable Object per user session) keeps it to one.
+  private cachedWidgetToken: string | null = null;
+
+  private async widgetToken(): Promise<string | null> {
+    if (this.cachedWidgetToken) return this.cachedWidgetToken;
     try {
-      token = await mintWidgetToken(this.env, this.props!.email);
+      this.cachedWidgetToken = await mintWidgetToken(this.env, this.props!.email);
     } catch (e) {
       console.error("mintWidgetToken failed", e);
+      this.cachedWidgetToken = null;
     }
+    return this.cachedWidgetToken;
+  }
+
+  /** Tool result that also feeds the widget: structuredContent for the model
+   *  and iframe, plus a hidden InstantDB token in _meta (widget-only — the
+   *  model never sees _meta) so the card can go live. `live` is false for
+   *  views the live subscription can't reproduce (a friend's data, or a
+   *  type-filtered slice) — the widget then keeps its static paint. */
+  private async widgetResult(payload: Record<string, unknown>, opts: { live: boolean }) {
+    const token = opts.live ? await this.widgetToken() : null;
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload) }],
       structuredContent: payload,
@@ -84,12 +106,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         title: "Nexus day card",
         description: "Live card showing the user's logged workouts, meals, and totals.",
         mimeType: "text/html+skybridge",
-        _meta: {
-          "openai/widgetCSP": WIDGET_CSP,
-          "openai/widgetPrefersBorder": true,
-          "openai/widgetDescription":
-            "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
-        },
+        _meta: WIDGET_META,
       },
       async () => ({
         contents: [
@@ -97,10 +114,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
             uri: WIDGET_URI,
             mimeType: "text/html+skybridge",
             text: widgetHtml(),
-            _meta: {
-              "openai/widgetCSP": WIDGET_CSP,
-              "openai/widgetPrefersBorder": true,
-            },
+            _meta: WIDGET_META,
           },
         ],
       }),
@@ -129,7 +143,8 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           const day = await getHistory(this.env, this.user(), { date });
           return { ...logged, ...day };
         });
-        return r.ok ? this.widgetResult(r.value) : errorResult(r.error);
+        // A log always describes the viewer's own single day — safe to go live.
+        return r.ok ? this.widgetResult(r.value, { live: true }) : errorResult(r.error);
       },
     );
 
@@ -149,7 +164,11 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       },
       async (args) => {
         const r = await safe(() => getHistory(this.env, this.user(), args));
-        return r.ok ? this.widgetResult(r.value) : errorResult(r.error);
+        // The live subscription can only reproduce the viewer's own,
+        // unfiltered day. Friend or type-filtered views stay static so the
+        // live socket never overwrites the card with the wrong data.
+        const live = !args.friend_id && !args.type;
+        return r.ok ? this.widgetResult(r.value, { live }) : errorResult(r.error);
       },
     );
 
@@ -175,7 +194,9 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         description:
           "Use this when the user wants to see their Nexus friends or friend code, add a friend by code (NEXUS-XXXX), or accept, reject, or remove a friend by email. Friends can view each other's fitness history via nexus_get_history with friend_id.",
         inputSchema: FriendsInput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+        // Not read-only (add/accept/remove mutate) and not open-world: it only
+        // touches this app's own data, never a third-party service.
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, this.user(), args));

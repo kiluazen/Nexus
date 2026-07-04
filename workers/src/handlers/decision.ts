@@ -1,5 +1,6 @@
 import type { NexusEnv } from "../types";
 import { sendLoginCode, verifyLoginCode, displayNameFromEmail } from "../instant";
+import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
 import { loadParsedAuthRequest } from "./authorize";
 
 interface DecisionBody {
@@ -50,6 +51,13 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
   }
 
   if (body.action === "request_code") {
+    // Same 60s-per-email throttle as the CLI path, so a replayed nonce can't
+    // email-bomb an address from the consent page.
+    const rlKey = `rl:code:${email}`;
+    if (await env.NEXUS_CACHE.get(rlKey)) {
+      return Response.json({ error: "Hang on a moment before requesting another code." }, { status: 429 });
+    }
+    await env.NEXUS_CACHE.put(rlKey, "1", { expirationTtl: 60 });
     try {
       await sendLoginCode(env, email);
     } catch (e) {
@@ -64,18 +72,26 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
   if (!/^\d{6}$/.test(code)) {
     return Response.json({ error: "Enter the 6-digit code from your email." }, { status: 400 });
   }
+  if (await isCodeLocked(env, email)) {
+    return Response.json(
+      { error: "Too many wrong codes. Request a new one and try again." },
+      { status: 429 },
+    );
+  }
 
   let login;
   try {
     login = await verifyLoginCode(env, email, code);
   } catch (e) {
     console.error("checkMagicCode failed", e);
+    await recordCodeFailure(env, email);
     return Response.json(
       { error: "That code didn't match. Check your email and try again." },
       { status: 401 },
     );
   }
 
+  await clearCodeFailures(env, email);
   await env.NEXUS_CACHE.delete(`consent:${body.nonce}`);
 
   const props = {

@@ -2,7 +2,8 @@ import type { NexusEnv } from "../types";
 import { handleAuthorize } from "./authorize";
 import { handleDecision } from "./decision";
 import { handleProtectedResource } from "./protected-resource";
-import { sendLoginCode, verifyLoginCode } from "../instant";
+import { sendLoginCode, verifyLoginCode, revokeToken } from "../instant";
+import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -51,12 +52,13 @@ export default {
       if (!EMAIL_RE.test(email)) {
         return Response.json({ error: "invalid_email" }, { status: 400 });
       }
-      // One code per address per 30s — enough to stop accidental loops.
+      // One code per address per minute (KV's minimum TTL) — enough to stop
+      // accidental loops.
       const rlKey = `rl:code:${email}`;
       if (await env.NEXUS_CACHE.get(rlKey)) {
         return Response.json({ error: "slow_down" }, { status: 429 });
       }
-      await env.NEXUS_CACHE.put(rlKey, "1", { expirationTtl: 30 });
+      await env.NEXUS_CACHE.put(rlKey, "1", { expirationTtl: 60 });
       try {
         await sendLoginCode(env, email);
       } catch (e) {
@@ -74,8 +76,12 @@ export default {
       if (!EMAIL_RE.test(email) || !/^\d{6}$/.test(code)) {
         return Response.json({ error: "invalid_email_or_code" }, { status: 400 });
       }
+      if (await isCodeLocked(env, email)) {
+        return Response.json({ error: "too_many_attempts" }, { status: 429 });
+      }
       try {
         const login = await verifyLoginCode(env, email, code);
+        await clearCodeFailures(env, email);
         return Response.json({
           token: login.refreshToken,
           user_id: login.userId,
@@ -83,8 +89,23 @@ export default {
         });
       } catch (e) {
         console.error("verify_code failed", e);
+        await recordCodeFailure(env, email);
         return Response.json({ error: "invalid_code" }, { status: 401 });
       }
+    }
+    // Revoke the presented InstantDB refresh token so `nexus auth logout`
+    // invalidates the session server-side, not just locally.
+    if (req.method === "POST" && path === "/api/v1/auth/logout") {
+      const auth = req.headers.get("authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token) {
+        try {
+          await revokeToken(env, token);
+        } catch (e) {
+          console.error("logout revoke failed", e);
+        }
+      }
+      return Response.json({ logged_out: true });
     }
 
     if (path === "/health") {

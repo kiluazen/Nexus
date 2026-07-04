@@ -156,6 +156,16 @@ def handle_auth_status(_: argparse.Namespace) -> None:
 
 
 def handle_auth_logout(_: argparse.Namespace) -> None:
+    # Best-effort server-side revoke so the token is dead even if the local
+    # file is later recovered; always clear local creds regardless.
+    creds = load_saved_credentials()
+    base_url = _cred_str(creds, "base_url")
+    token = _cred_str(creds, "token")
+    if base_url and token:
+        try:
+            _http_json("POST", f"{base_url}/api/v1/auth/logout", token=token)
+        except CliError:
+            pass
     if CREDENTIALS_PATH.exists():
         CREDENTIALS_PATH.unlink()
     print_json({"logged_out": True})

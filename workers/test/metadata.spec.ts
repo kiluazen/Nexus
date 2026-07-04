@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleProtectedResource } from "../src/handlers/protected-resource";
 import { computeMealTotals, parseEntry } from "../src/schema/entry-shapes";
+import { parseDate, ValidationError } from "../src/lib/dates";
 import type { NexusEnv } from "../src/types";
 
 const env = { BASE_URL: "https://mcp.nexus.kushalsm.com" } as NexusEnv;
@@ -30,5 +31,13 @@ describe("submission metadata", () => {
       exercise_key: "Bench Press",
       sets: [{ weight_kg: 60, reps: 8 }],
     })).toThrow(/exercise_key/);
+  });
+
+  it("rejects calendar dates that V8 would silently roll over", () => {
+    expect(parseDate("2026-07-04")).toBe("2026-07-04");
+    // 2026 is not a leap year; Feb 30 / Apr 31 roll forward in V8.
+    expect(() => parseDate("2026-02-30")).toThrow(ValidationError);
+    expect(() => parseDate("2026-04-31")).toThrow(ValidationError);
+    expect(() => parseDate("2026-02-29")).toThrow(ValidationError);
   });
 });

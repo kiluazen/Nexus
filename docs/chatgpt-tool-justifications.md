@@ -1,59 +1,61 @@
 # ChatGPT MCP App — Tool Justifications
 
-Copy-paste these into the form fields.
+Copy-paste these into the submission form fields. They mirror the annotations
+declared in `workers/src/mcp.ts` exactly — reviewers reject apps whose stated
+hints don't match tool behavior, so keep the two in sync.
+
+Annotation legend: **Read Only** = `readOnlyHint`, **Destructive** =
+`destructiveHint`, **Open World** = `openWorldHint`. "Open world" means the tool
+reaches a service *outside* this app (email, third-party API). Every Nexus tool
+touches only the user's own data in Nexus's InstantDB, so open world is No for
+all of them.
 
 ---
 
-## `log`
+## `nexus_log_entries`
 
-**Read Only: No**
-This tool inserts new rows into the database (workout exercises and meal entries). It writes data, so it is not read-only.
+**Read Only: No** — inserts new workout, meal, and body-weight rows.
 
-**Open World: Yes**
-The tool accepts free-form exercise names, exercise keys, and meal item descriptions from the user. It processes arbitrary real-world food and exercise data that the model identifies, so it interacts with the open world of possible inputs.
+**Destructive: No** — it only appends new rows; it never overwrites or deletes
+existing entries. Corrections go through `nexus_update_entry`.
 
-**Destructive: Yes**
-Inserting entries modifies the user's data permanently. While individual inserts can be corrected via the update tool, a duplicate or incorrect entry changes the user's logged history and daily macro totals.
-
----
-
-## `history`
-
-**Read Only: No**
-While history primarily reads data, it also computes and returns derived values (day_totals, pending friend request counts) and triggers a friend code generation on first use if one doesn't exist. It is not purely read-only due to these side effects.
-
-**Open World: Yes**
-The tool queries user data that includes free-form exercise names, meal items, and notes entered by the user over time. The response content reflects open-world data.
-
-**Destructive: Yes**
-The tool can trigger friend code generation as a side effect on first use, which writes to the users table. This is a minor write but technically modifies server state.
+**Open World: No** — writes solely to the authenticated user's own data in the
+app database; no third-party service is contacted.
 
 ---
 
-## `update`
+## `nexus_get_history`
 
-*(Not shown in screenshot but likely also needed)*
+**Read Only: Yes** — returns the user's logged entries, totals, and exercise
+keys. First use lazily assigns a friend code, but that is a one-time
+idempotent backfill, not a user-visible mutation, so the tool reads as
+read-only to the model.
 
-**Read Only: No**
-This tool replaces the data of an existing database entry. It performs an UPDATE query, modifying stored workout sets, meal items, or exercise details.
+**Destructive: No** — reads data.
 
-**Open World: Yes**
-The replacement data contains free-form exercise names, meal items, and macro estimates from the user. The tool processes arbitrary real-world fitness and nutrition data.
-
-**Destructive: Yes**
-The tool performs a full replacement of an entry's data. The previous version of the data is overwritten and cannot be recovered. Incorrect updates could lose the user's original logged information.
+**Open World: No** — queries only the authenticated user's own data (or a
+friend's, gated by an accepted friendship); no external service.
 
 ---
 
-## `friends`
+## `nexus_update_entry`
 
-*(Not shown in screenshot but likely also needed)*
+**Read Only: No** — replaces the data of one existing entry.
 
-**Read Only: No**
-This tool creates, updates, and deletes friendship records in the database. The "add" action inserts rows, "accept" updates status, and "reject"/"remove" delete rows.
+**Destructive: Yes** — a full replacement overwrites the prior version of that
+entry, which cannot be recovered.
 
-**Open World: Yes**
-The tool interacts with other users via friend codes and display names. It operates across the user base, not just the authenticated user's own data.
+**Open World: No** — modifies only the authenticated user's own row.
 
-**Destructive: Yes**
-The "remove" and "reject" actions permanently delete friendship records from the database. Removing a friend revokes their ability to view the user's workout and meal history.
+---
+
+## `nexus_manage_friends`
+
+**Read Only: No** — `add` creates a request, `accept` updates status,
+`reject`/`remove` delete rows. (`list` reads, but the tool as a whole mutates.)
+
+**Destructive: Yes** — `remove` and `reject` permanently delete friendship
+records; removing a friend revokes their view of the user's history.
+
+**Open World: No** — operates only on this app's own friendship and user rows.
+Friend codes and emails address other Nexus accounts, not an external service.

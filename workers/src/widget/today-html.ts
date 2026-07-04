@@ -165,10 +165,16 @@ export function widgetHtml(): string {
   }
 
   if (window.openai && window.openai.toolOutput) boot();
-  else window.addEventListener("openai:set_globals", boot, { once: true });
+  // set_globals fires for ANY host change (theme, layout, new tool output).
+  // Re-boot until we've painted real data, then just keep retrying live.
+  var painted = false;
+  window.addEventListener("openai:set_globals", function () {
+    if (!painted && window.openai && window.openai.toolOutput) { painted = true; boot(); }
+    else tryLive();
+  });
   // The UMD script below loads after this inline script — retry live then.
   window.addEventListener("load", tryLive);
 })();
 </script>
-<script src="https://unpkg.com/@instantdb/core@1.0.49/standalone/index.umd.js" defer></script>`;
+<script src="https://unpkg.com/@instantdb/core@1.0.49/dist/standalone/index.umd.cjs" defer></script>`;
 }

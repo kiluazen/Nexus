@@ -226,9 +226,17 @@ export async function getHistory(
   if (!args.friend_id) {
     const scoped = userDb(env, user.email);
     const [ek, pending] = await Promise.all([
-      scoped.query({
+      // Newest first: without an order InstaQL returns oldest-first, so a
+      // heavy user's recent exercises would fall outside the 500-row window
+      // and the model would coin duplicate keys.
+      rawQuery(scoped, {
         entries: {
-          $: { where: { type: "workout" }, fields: ["exercise_key"], limit: 500 },
+          $: {
+            where: { type: "workout" },
+            fields: ["exercise_key"],
+            order: { created_at: "desc" },
+            limit: 500,
+          },
         },
       }),
       scoped.query({
