@@ -1,162 +1,176 @@
 import type { NexusEnv } from "../types";
-import { withClient } from "./db";
+import { adminDb, ensureFriendCode, displayNameFromEmail, rawQuery, id as newId } from "../instant";
+import type { UserCtx } from "./entries";
 import { ValidationError } from "../lib/dates";
 
-interface UserCtx {
-  userId: string;
-  displayName: string;
+type PartyRow = { id: string; email?: string; friend_code?: string };
+type FriendshipRow = {
+  id: string;
+  status: string;
+  created_at: number | string;
+  requester?: PartyRow;
+  addressee?: PartyRow;
+};
+
+function party(p: PartyRow | undefined) {
+  const email = p?.email ?? "";
+  return {
+    user_id: p?.id ?? "",
+    email,
+    display_name: displayNameFromEmail(email),
+    friend_code: p?.friend_code ?? null,
+  };
 }
 
 export async function manageFriends(
   env: NexusEnv,
   user: UserCtx,
-  args: { action: string; code?: string; display_name?: string },
+  args: { action: string; code?: string; email?: string },
 ): Promise<Record<string, unknown>> {
-  return withClient(env, async (c) => {
-    await c.query(
-      `INSERT INTO users (id, display_name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
-      [user.userId, user.displayName],
-    );
+  const db = adminDb(env);
 
-    switch (args.action) {
-      case "list":   return list(c, user.userId);
-      case "add": {
-        if (!args.code) throw new ValidationError("code is required for 'add'.");
-        return add(c, user.userId, args.code.trim().toUpperCase());
-      }
-      case "accept":
-      case "reject": {
-        if (!args.display_name) throw new ValidationError(`display_name is required for '${args.action}'.`);
-        return acceptOrReject(c, user.userId, args.display_name.trim(), args.action === "accept");
-      }
-      case "remove": {
-        if (!args.display_name) throw new ValidationError("display_name is required for 'remove'.");
-        return remove(c, user.userId, args.display_name.trim());
-      }
-      default:
-        throw new ValidationError(`Unknown action: ${JSON.stringify(args.action)}. Use list/add/accept/reject/remove.`);
+  switch (args.action) {
+    case "list":
+      return list(db, user);
+    case "add": {
+      if (!args.code) throw new ValidationError("code is required for 'add'.");
+      return add(db, user, args.code.trim().toUpperCase());
     }
+    case "accept":
+    case "reject": {
+      if (!args.email) throw new ValidationError(`email is required for '${args.action}'.`);
+      return acceptOrReject(db, user, args.email.trim().toLowerCase(), args.action === "accept");
+    }
+    case "remove": {
+      if (!args.email) throw new ValidationError("email is required for 'remove'.");
+      return remove(db, user, args.email.trim().toLowerCase());
+    }
+    default:
+      throw new ValidationError(
+        `Unknown action: ${JSON.stringify(args.action)}. Use list/add/accept/reject/remove.`,
+      );
+  }
+}
+
+async function myFriendships(db: ReturnType<typeof adminDb>, userId: string) {
+  const res = await rawQuery(db, {
+    friendships: {
+      $: {
+        where: { or: [{ "requester.id": userId }, { "addressee.id": userId }] },
+        order: { created_at: "desc" },
+      },
+      requester: {},
+      addressee: {},
+    },
   });
+  return res.friendships as unknown as FriendshipRow[];
 }
 
-async function ensureFriendCode(c: import("pg").Client, userId: string): Promise<string> {
-  const existing = await c.query<{ friend_code: string | null }>(
-    `SELECT friend_code FROM users WHERE id = $1`,
-    [userId],
-  );
-  const current = existing.rows[0]?.friend_code ?? null;
-  if (current) return current;
+async function list(db: ReturnType<typeof adminDb>, user: UserCtx) {
+  const myCode = await ensureFriendCode(db, user.userId);
+  const rows = await myFriendships(db, user.userId);
 
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (let attempt = 0; attempt < 10; attempt++) {
-    let suffix = "";
-    for (let i = 0; i < 4; i++) suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
-    const code = `NEXUS-${suffix}`;
-    const clash = await c.query(`SELECT 1 FROM users WHERE friend_code = $1 LIMIT 1`, [code]);
-    if (clash.rows.length === 0) {
-      await c.query(`UPDATE users SET friend_code = $1 WHERE id = $2`, [code, userId]);
-      return code;
+  const friends: Record<string, unknown>[] = [];
+  const pendingReceived: Record<string, unknown>[] = [];
+  const pendingSent: Record<string, unknown>[] = [];
+
+  for (const f of rows) {
+    const iAmRequester = f.requester?.id === user.userId;
+    const other = party(iAmRequester ? f.addressee : f.requester);
+    if (f.status === "active") {
+      friends.push({ ...other, since: new Date(f.created_at).toISOString().slice(0, 10) });
+    } else if (f.status === "pending" && !iAmRequester) {
+      pendingReceived.push(other);
+    } else if (f.status === "pending" && iAmRequester) {
+      pendingSent.push(other);
     }
   }
-  throw new ValidationError("Failed to generate unique friend code.");
+
+  friends.sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
+  return { your_code: myCode, friends, pending_received: pendingReceived, pending_sent: pendingSent };
 }
 
-async function list(c: import("pg").Client, userId: string): Promise<Record<string, unknown>> {
-  const myCode = await ensureFriendCode(c, userId);
+async function add(db: ReturnType<typeof adminDb>, user: UserCtx, code: string) {
+  const target = await db.query({ $users: { $: { where: { friend_code: code } } } });
+  const t = target.$users[0];
+  if (!t) throw new ValidationError(`No user found with code ${code}`);
+  if (t.id === user.userId) throw new ValidationError("You can't add yourself.");
 
-  const friends = await c.query<{ id: string; display_name: string; since: string }>(
-    `SELECT u.id, u.display_name, f.created_at::date::text AS since
-     FROM friendships f
-     JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.recipient_id ELSE f.requester_id END
-     WHERE (f.requester_id = $1 OR f.recipient_id = $1) AND f.status = 'active'
-     ORDER BY u.display_name`,
-    [userId],
-  );
-  const pendingReceived = await c.query<{ id: string; display_name: string }>(
-    `SELECT u.id, u.display_name FROM friendships f
-     JOIN users u ON u.id = f.requester_id
-     WHERE f.recipient_id = $1 AND f.status = 'pending'
-     ORDER BY f.created_at DESC`,
-    [userId],
-  );
-  const pendingSent = await c.query<{ id: string; display_name: string }>(
-    `SELECT u.id, u.display_name FROM friendships f
-     JOIN users u ON u.id = f.recipient_id
-     WHERE f.requester_id = $1 AND f.status = 'pending'
-     ORDER BY f.created_at DESC`,
-    [userId],
-  );
-
-  return {
-    your_code: myCode,
-    friends: friends.rows.map((r) => ({ user_id: r.id, display_name: r.display_name, since: r.since })),
-    pending_received: pendingReceived.rows.map((r) => ({ user_id: r.id, display_name: r.display_name })),
-    pending_sent:     pendingSent.rows.map((r) => ({ user_id: r.id, display_name: r.display_name })),
-  };
-}
-
-async function add(c: import("pg").Client, userId: string, code: string): Promise<Record<string, unknown>> {
-  const target = await c.query<{ id: string; display_name: string }>(
-    `SELECT id, display_name FROM users WHERE friend_code = $1 LIMIT 1`,
-    [code],
-  );
-  if (target.rows.length === 0) throw new ValidationError(`No user found with code ${code}`);
-  const t = target.rows[0]!;
-  if (t.id === userId) throw new ValidationError("You can't add yourself.");
-
-  const existing = await c.query<{ status: string }>(
-    `SELECT status FROM friendships
-     WHERE (requester_id = $1 AND recipient_id = $2)
-        OR (requester_id = $2 AND recipient_id = $1)
-     LIMIT 1`,
-    [userId, t.id],
-  );
-  if (existing.rows.length > 0) {
-    return existing.rows[0]!.status === "active"
-      ? { status: "already_friends", with: t.display_name }
-      : { status: "already_pending", with: t.display_name };
+  const existing = await rawQuery(db, {
+    friendships: {
+      $: {
+        where: {
+          or: [
+            { and: [{ "requester.id": user.userId }, { "addressee.id": t.id }] },
+            { and: [{ "requester.id": t.id }, { "addressee.id": user.userId }] },
+          ],
+        },
+      },
+    },
+  });
+  const found = existing.friendships[0] as FriendshipRow | undefined;
+  const otherName = displayNameFromEmail(t.email ?? "");
+  if (found) {
+    return found.status === "active"
+      ? { status: "already_friends", with: otherName }
+      : { status: "already_pending", with: otherName };
   }
 
-  await c.query(
-    `INSERT INTO friendships (requester_id, recipient_id, status) VALUES ($1, $2, 'pending')`,
-    [userId, t.id],
-  );
-  return { status: "request_sent", to: t.display_name };
+  await db.transact([
+    db.tx.friendships[newId()]!
+      .update({ status: "pending", created_at: Date.now() })
+      .link({ requester: user.userId, addressee: t.id }),
+  ]);
+  return { status: "request_sent", to: otherName };
 }
 
 async function acceptOrReject(
-  c: import("pg").Client,
-  userId: string,
-  displayName: string,
+  db: ReturnType<typeof adminDb>,
+  user: UserCtx,
+  email: string,
   accept: boolean,
-): Promise<Record<string, unknown>> {
-  const row = await c.query<{ id: number; display_name: string }>(
-    `SELECT f.id, u.display_name FROM friendships f
-     JOIN users u ON u.id = f.requester_id
-     WHERE f.recipient_id = $1 AND f.status = 'pending' AND u.display_name = $2
-     LIMIT 1`,
-    [userId, displayName],
-  );
-  if (row.rows.length === 0) throw new ValidationError(`No pending request from '${displayName}'.`);
-  const id = row.rows[0]!.id;
-  const name = row.rows[0]!.display_name;
+) {
+  const res = await rawQuery(db, {
+    friendships: {
+      $: {
+        where: {
+          and: [
+            { "addressee.id": user.userId },
+            { status: "pending" },
+            { "requester.email": email },
+          ],
+        },
+      },
+      requester: {},
+    },
+  });
+  const f = res.friendships[0] as FriendshipRow | undefined;
+  if (!f) throw new ValidationError(`No pending request from '${email}'.`);
+  const name = displayNameFromEmail(f.requester?.email ?? email);
+
   if (accept) {
-    await c.query(`UPDATE friendships SET status = 'active' WHERE id = $1`, [id]);
+    await db.transact([db.tx.friendships[f.id]!.update({ status: "active" })]);
     return { status: "accepted", friend: name };
   }
-  await c.query(`DELETE FROM friendships WHERE id = $1`, [id]);
+  await db.transact([db.tx.friendships[f.id]!.delete()]);
   return { status: "rejected", name };
 }
 
-async function remove(c: import("pg").Client, userId: string, displayName: string): Promise<Record<string, unknown>> {
-  const deleted = await c.query(
-    `DELETE FROM friendships WHERE id IN (
-       SELECT f.id FROM friendships f
-       JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.recipient_id ELSE f.requester_id END
-       WHERE (f.requester_id = $1 OR f.recipient_id = $1) AND u.display_name = $2
-     ) RETURNING id`,
-    [userId, displayName],
-  );
-  if (deleted.rowCount === 0) throw new ValidationError(`No friend named '${displayName}' found.`);
-  return { status: "removed", name: displayName };
+async function remove(db: ReturnType<typeof adminDb>, user: UserCtx, email: string) {
+  const res = await rawQuery(db, {
+    friendships: {
+      $: {
+        where: {
+          or: [
+            { and: [{ "requester.id": user.userId }, { "addressee.email": email }] },
+            { and: [{ "addressee.id": user.userId }, { "requester.email": email }] },
+          ],
+        },
+      },
+    },
+  });
+  const rows = res.friendships as unknown as FriendshipRow[];
+  if (rows.length === 0) throw new ValidationError(`No friend with email '${email}' found.`);
+  await db.transact(rows.map((f) => db.tx.friendships[f.id]!.delete()));
+  return { status: "removed", email };
 }

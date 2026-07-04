@@ -1,18 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
-import http.server
 import json
 import os
-import secrets
-import socket
 import stat
 import sys
-import threading
-import time
-import webbrowser
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -20,6 +12,7 @@ from urllib import error, parse, request
 DEFAULT_BASE_URL = "https://mcp.nexus.kushalsm.com"
 CONFIG_DIR = Path.home() / ".config" / "nexus"
 CREDENTIALS_PATH = CONFIG_DIR / "credentials.json"
+VERSION = "3.0.0"
 
 
 class CliError(RuntimeError):
@@ -44,13 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nexus",
         description="Nexus – track workouts and nutrition from your terminal.",
     )
-    parser.add_argument("--version", action="version", version="nexus-fitness 2.1.0")
+    parser.add_argument("--version", action="version", version=f"nexus-fitness {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
     auth_parser = subparsers.add_parser("auth", help="Manage authentication")
     auth_subparsers = auth_parser.add_subparsers(dest="auth_command")
 
-    auth_login = auth_subparsers.add_parser("login", help="Sign in with Google")
+    auth_login = auth_subparsers.add_parser(
+        "login", help="Sign in with an email code (no browser needed)"
+    )
+    auth_login.add_argument("--email", help="Email to sign in with")
     auth_login.add_argument("--base-url", help="Nexus API base URL")
     auth_login.set_defaults(handler=handle_auth_login)
 
@@ -77,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     log_parser.set_defaults(handler=handle_log)
 
     update_parser = subparsers.add_parser("update", help="Update an existing entry")
-    update_parser.add_argument("--entry-id", required=True, type=int)
+    update_parser.add_argument("--entry-id", required=True, help="Entry id from history/log output")
     update_input = update_parser.add_mutually_exclusive_group(required=True)
     update_input.add_argument("--file", help="JSON file with the full replacement object")
     update_input.add_argument("--data", help="Inline JSON replacement object")
@@ -94,126 +90,64 @@ def build_parser() -> argparse.ArgumentParser:
     friends_add.set_defaults(handler=handle_friends_add)
 
     friends_accept = friends_subparsers.add_parser("accept", help="Accept a pending request")
-    friends_accept.add_argument("--display-name", required=True)
+    friends_accept.add_argument("--email", required=True)
     friends_accept.set_defaults(handler=handle_friends_accept)
 
     friends_reject = friends_subparsers.add_parser("reject", help="Reject a pending request")
-    friends_reject.add_argument("--display-name", required=True)
+    friends_reject.add_argument("--email", required=True)
     friends_reject.set_defaults(handler=handle_friends_reject)
 
     friends_remove = friends_subparsers.add_parser("remove", help="Remove an active friend")
-    friends_remove.add_argument("--display-name", required=True)
+    friends_remove.add_argument("--email", required=True)
     friends_remove.set_defaults(handler=handle_friends_remove)
 
     return parser
 
 
 # ------------------------------------------------------------------ auth
+#
+# Login is an email magic code, end to end in the terminal:
+#   1. POST /api/v1/auth/request_code {email}
+#   2. user types the 6-digit code from their inbox
+#   3. POST /api/v1/auth/verify_code {email, code} -> long-lived token
+# The token is an InstantDB refresh token; the server resolves it to the same
+# identity ChatGPT gets through OAuth. No browser, no PKCE, no token refresh.
 
 
 def handle_auth_login(args: argparse.Namespace) -> None:
     base_url = resolve_base_url(explicit=getattr(args, "base_url", None), allow_saved=False)
 
-    auth_config = fetch_auth_config(base_url)
-    if not auth_config.get("auth_enabled"):
-        raise CliError("Auth is not enabled on this Nexus server.")
+    email = (getattr(args, "email", None) or "").strip()
+    if not email:
+        email = input("Email: ").strip()
+    if "@" not in email:
+        raise CliError("Enter a valid email address.")
 
-    supabase_url = auth_config.get("supabase_url")
-    publishable_key = auth_config.get("supabase_publishable_key")
-    if not supabase_url or not publishable_key:
-        raise CliError("Server did not return valid Supabase auth configuration.")
+    _http_json("POST", f"{base_url}/api/v1/auth/request_code", body={"email": email})
+    print(f"Code sent to {email}.")
 
-    # PKCE challenge (provides CSRF protection via code_verifier binding)
-    code_verifier = secrets.token_urlsafe(64)
-    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
-    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    code = input("6-digit code: ").strip()
+    if len(code) != 6 or not code.isdigit():
+        raise CliError("The code is 6 digits.")
 
-    # Find a free port and start a temporary callback server.
-    # Use 127.0.0.1 (not localhost) in both the bind address and redirect URL
-    # so IPv6-first systems where localhost resolves to ::1 don't miss the listener.
-    port = _find_free_port()
-    callback_url = f"http://127.0.0.1:{port}/callback"
-    auth_code: list[str | None] = [None]
-
-    class _CallbackHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            parsed = parse.urlparse(self.path)
-            params = parse.parse_qs(parsed.query)
-            auth_code[0] = (params.get("code") or [None])[0]
-
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            if auth_code[0]:
-                self.wfile.write(_callback_html("Signed in", "You can close this tab and return to your terminal."))
-            else:
-                self.wfile.write(_callback_html("Sign-in failed", "Check your terminal for details."))
-
-        def log_message(self, format: str, *log_args: Any) -> None:
-            pass  # silence request logs
-
-    server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
-    server.timeout = 120
-    server_thread = threading.Thread(target=server.handle_request, daemon=True)
-    server_thread.start()
-
-    authorize_url = (
-        f"{supabase_url.rstrip('/')}/auth/v1/authorize?"
-        + parse.urlencode(
-            {
-                "provider": "google",
-                "redirect_to": callback_url,
-                "code_challenge": code_challenge,
-                "code_challenge_method": "S256",
-            }
-        )
-    )
-
-    print("Opening browser to sign in with Google...")
-    webbrowser.open(authorize_url)
-    print(f"Waiting for sign-in (listening on 127.0.0.1:{port})...")
-
-    server_thread.join(timeout=120)
-    server.server_close()
-
-    code = auth_code[0]
-    if not code:
-        raise CliError("Sign-in timed out or was cancelled.")
-
-    # Exchange the code for tokens via Supabase PKCE flow
-    token_response = _http_json(
+    payload = _http_json(
         "POST",
-        f"{supabase_url.rstrip('/')}/auth/v1/token",
-        query={"grant_type": "pkce"},
-        body={"auth_code": code, "code_verifier": code_verifier},
-        extra_headers={"apikey": publishable_key},
+        f"{base_url}/api/v1/auth/verify_code",
+        body={"email": email, "code": code},
     )
-
-    access_token = token_response.get("access_token")
-    if not isinstance(access_token, str) or not access_token.strip():
-        raise CliError("Supabase returned no access token.")
-
-    expires_at = token_response.get("expires_at")
-    if expires_at is None:
-        expires_in = token_response.get("expires_in")
-        if isinstance(expires_in, (int, float)):
-            expires_at = int(time.time() + float(expires_in))
-
-    user_info = token_response.get("user") or {}
-    email = user_info.get("email", "unknown")
+    token = payload.get("token")
+    if not isinstance(token, str) or not token.strip():
+        raise CliError("Server returned no token.")
 
     save_credentials(
         {
             "base_url": base_url,
-            "token": access_token.strip(),
-            "refresh_token": token_response.get("refresh_token"),
-            "expires_at": expires_at,
-            "supabase_url": supabase_url,
-            "supabase_publishable_key": publishable_key,
+            "token": token.strip(),
+            "email": payload.get("email", email),
+            "user_id": payload.get("user_id"),
         }
     )
-
-    print(f"Logged in as {email}")
+    print(f"Logged in as {payload.get('email', email)}")
 
 
 def handle_auth_status(_: argparse.Namespace) -> None:
@@ -292,29 +226,29 @@ def handle_friends_add(args: argparse.Namespace) -> None:
 
 
 def handle_friends_accept(args: argparse.Namespace) -> None:
-    _friends_action("accept", display_name=args.display_name)
+    _friends_action("accept", email=args.email)
 
 
 def handle_friends_reject(args: argparse.Namespace) -> None:
-    _friends_action("reject", display_name=args.display_name)
+    _friends_action("reject", email=args.email)
 
 
 def handle_friends_remove(args: argparse.Namespace) -> None:
-    _friends_action("remove", display_name=args.display_name)
+    _friends_action("remove", email=args.email)
 
 
 def _friends_action(
     action: str,
     *,
     code: str | None = None,
-    display_name: str | None = None,
+    email: str | None = None,
 ) -> None:
     client = NexusApiClient.from_saved()
     print_json(
         client.request_json(
             "POST",
             "/api/v1/friends",
-            body={"action": action, "code": code, "display_name": display_name},
+            body={"action": action, "code": code, "email": email},
         )
     )
 
@@ -323,10 +257,9 @@ def _friends_action(
 
 
 class NexusApiClient:
-    def __init__(self, *, base_url: str, token: str, credentials: dict[str, Any]) -> None:
+    def __init__(self, *, base_url: str, token: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
-        self._credentials = credentials
 
     @classmethod
     def from_saved(cls) -> "NexusApiClient":
@@ -339,7 +272,7 @@ class NexusApiClient:
         if not base_url or not token:
             raise CliError("Credentials are incomplete. Run `nexus auth login` again.")
 
-        return cls(base_url=base_url, token=token, credentials=creds)
+        return cls(base_url=base_url, token=token)
 
     def request_json(
         self,
@@ -349,7 +282,6 @@ class NexusApiClient:
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        self._refresh_if_needed()
         try:
             return _http_json(
                 method,
@@ -359,60 +291,9 @@ class NexusApiClient:
                 body=body,
             )
         except CliError as exc:
-            if "HTTP 401" not in str(exc):
-                raise
-            if not self._force_refresh():
-                raise
-            return _http_json(
-                method,
-                f"{self._base_url}{path}",
-                token=self._token,
-                query=query,
-                body=body,
-            )
-
-    def _refresh_if_needed(self) -> None:
-        expires_at = _cred_number(self._credentials, "expires_at")
-        if expires_at is None:
-            return
-        if time.time() < expires_at - 60:
-            return
-        self._force_refresh()
-
-    def _force_refresh(self) -> bool:
-        refresh_token = _cred_str(self._credentials, "refresh_token")
-        supabase_url = _cred_str(self._credentials, "supabase_url")
-        publishable_key = _cred_str(self._credentials, "supabase_publishable_key")
-        if not refresh_token or not supabase_url or not publishable_key:
-            return False
-
-        try:
-            payload = _http_json(
-                "POST",
-                f"{supabase_url.rstrip('/')}/auth/v1/token",
-                query={"grant_type": "refresh_token"},
-                body={"refresh_token": refresh_token},
-                extra_headers={"apikey": publishable_key},
-            )
-        except CliError:
-            return False
-
-        new_token = payload.get("access_token")
-        if not isinstance(new_token, str) or not new_token.strip():
-            return False
-
-        expires_at = payload.get("expires_at")
-        if expires_at is None:
-            expires_in = payload.get("expires_in")
-            if isinstance(expires_in, (int, float)):
-                expires_at = int(time.time() + float(expires_in))
-
-        self._token = new_token.strip()
-        self._credentials["token"] = self._token
-        self._credentials["refresh_token"] = payload.get("refresh_token", refresh_token)
-        self._credentials["expires_at"] = expires_at
-        save_credentials(self._credentials)
-        return True
+            if "HTTP 401" in str(exc):
+                raise CliError("Session expired. Run `nexus auth login` again.") from exc
+            raise
 
 
 # ----------------------------------------------------------- HTTP helpers
@@ -425,7 +306,6 @@ def _http_json(
     token: str | None = None,
     query: dict[str, Any] | None = None,
     body: dict[str, Any] | None = None,
-    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if query:
         clean = {k: v for k, v in query.items() if v is not None}
@@ -436,14 +316,12 @@ def _http_json(
     # Cloudflare's bot filter (Error 1010) blocks on protected origins.
     headers: dict[str, str] = {
         "Accept": "application/json",
-        "User-Agent": "nexus-cli/2.1.0",
+        "User-Agent": f"nexus-cli/{VERSION}",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if body is not None:
         headers["Content-Type"] = "application/json"
-    if extra_headers:
-        headers.update(extra_headers)
 
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = request.Request(url, data=data, headers=headers, method=method)
@@ -488,13 +366,6 @@ def _cred_str(creds: dict[str, Any] | None, key: str) -> str | None:
     return val.strip() if isinstance(val, str) and val.strip() else None
 
 
-def _cred_number(creds: dict[str, Any] | None, key: str) -> float | None:
-    if creds is None:
-        return None
-    val = creds.get(key)
-    return float(val) if isinstance(val, (int, float)) else None
-
-
 # --------------------------------------------------------- input helpers
 
 
@@ -505,10 +376,6 @@ def resolve_base_url(*, explicit: str | None = None, allow_saved: bool = True) -
     if not base_url:
         base_url = DEFAULT_BASE_URL
     return base_url.rstrip("/")
-
-
-def fetch_auth_config(base_url: str) -> dict[str, Any]:
-    return _http_json("GET", f"{base_url.rstrip('/')}/api/v1/auth/config")
 
 
 def _read_entries(args: argparse.Namespace) -> list[Any]:
@@ -535,35 +402,6 @@ def _read_entries(args: argparse.Namespace) -> list[Any]:
 def _load_json_file(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _callback_html(title: str, message: str) -> bytes:
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Nexus – {title}</title>
-<style>
-  body {{ margin:0; background:#f5f2ea; color:#525051; font-family:ui-sans-serif,system-ui,sans-serif; }}
-  main {{ max-width:480px; margin:6rem auto; padding:2rem; text-align:center; }}
-  h1 {{ font-size:2.2rem; font-weight:700; margin-bottom:.5rem; }}
-  p {{ font-size:1.1rem; color:#9B9692; }}
-</style>
-</head>
-<body>
-<main>
-  <h1>{title}</h1>
-  <p>{message}</p>
-</main>
-</body>
-</html>""".encode("utf-8")
 
 
 def print_json(payload: dict[str, Any]) -> None:

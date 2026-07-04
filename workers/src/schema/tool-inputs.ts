@@ -14,14 +14,14 @@ export const HistoryInput = z.object({
 });
 
 export const UpdateInput = z.object({
-  entry_id: z.number().int().positive(),
+  entry_id: z.string().min(1),
   data: z.record(z.string(), z.unknown()),
 });
 
 export const FriendsInput = z.object({
   action: z.enum(["list", "add", "accept", "reject", "remove"]),
   code: z.string().optional(),
-  display_name: z.string().optional(),
+  email: z.string().optional(),
 });
 
 export type LogInputT = z.infer<typeof LogInput>;
