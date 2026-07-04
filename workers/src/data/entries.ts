@@ -152,9 +152,16 @@ export async function getHistory(
   if (args.type) whereRange.push({ type: args.type });
 
   let rows: EntryRow[];
+  // For own reads we also need the exercise-key list and pending-request count.
+  // They're independent of the entries query, so fire all three together —
+  // sequential InstantDB calls are ~400ms each and stack up otherwise.
+  let exerciseKeys: string[] = [];
+  let pendingCount = 0;
+
   if (args.friend_id) {
     // Friend reads bypass the CEL rules on purpose, gated by an explicit
-    // friendship check right here.
+    // friendship check right here. The check must precede the read, so these
+    // two stay sequential.
     const db = adminDb(env);
     const f = await rawQuery(db, {
       friendships: {
@@ -182,15 +189,32 @@ export async function getHistory(
   } else {
     // Own reads run permission-scoped: instant.perms.ts is the enforcement.
     const scoped = userDb(env, user.email);
-    const r = await rawQuery(scoped, {
-      entries: {
-        $: {
-          where: { and: whereRange },
-          order: { entry_date: "desc" },
+    const [entriesRes, exRes, pendingRes] = await Promise.all([
+      rawQuery(scoped, {
+        entries: { $: { where: { and: whereRange }, order: { entry_date: "desc" } } },
+      }),
+      // Newest first so a heavy user's recent exercises stay in the window.
+      rawQuery(scoped, {
+        entries: {
+          $: {
+            where: { type: "workout" },
+            fields: ["exercise_key"],
+            order: { created_at: "desc" },
+            limit: 500,
+          },
         },
-      },
-    });
-    rows = r.entries as unknown as EntryRow[];
+      }),
+      rawQuery(scoped, {
+        friendships: { $: { where: { "addressee.id": user.userId, status: "pending" } } },
+      }),
+    ]);
+    rows = entriesRes.entries as unknown as EntryRow[];
+    const keys = new Set<string>();
+    for (const row of exRes.entries as { exercise_key?: string }[]) {
+      if (row.exercise_key) keys.add(row.exercise_key);
+    }
+    exerciseKeys = [...keys].sort();
+    pendingCount = pendingRes.friendships.length;
   }
 
   const workouts: Record<string, unknown>[] = [];
@@ -224,33 +248,7 @@ export async function getHistory(
   };
 
   if (!args.friend_id) {
-    const scoped = userDb(env, user.email);
-    const [ek, pending] = await Promise.all([
-      // Newest first: without an order InstaQL returns oldest-first, so a
-      // heavy user's recent exercises would fall outside the 500-row window
-      // and the model would coin duplicate keys.
-      rawQuery(scoped, {
-        entries: {
-          $: {
-            where: { type: "workout" },
-            fields: ["exercise_key"],
-            order: { created_at: "desc" },
-            limit: 500,
-          },
-        },
-      }),
-      scoped.query({
-        friendships: {
-          $: { where: { "addressee.id": user.userId, status: "pending" } },
-        },
-      }),
-    ]);
-    const keys = new Set<string>();
-    for (const row of ek.entries as { exercise_key?: string }[]) {
-      if (row.exercise_key) keys.add(row.exercise_key);
-    }
-    result.your_exercises = [...keys].sort();
-    const pendingCount = pending.friendships.length;
+    result.your_exercises = exerciseKeys;
     if (pendingCount > 0) result.pending_friend_requests = pendingCount;
   }
 

@@ -58,7 +58,9 @@ export async function verifyLoginCode(
 ): Promise<VerifiedLogin> {
   const db = adminDb(env);
   const { user } = await db.auth.checkMagicCode(email, code);
-  await ensureFriendCode(db, user.id);
+  // Friend code is assigned lazily the first time the user opens friends —
+  // keeping it off the sign-in path saves an InstantDB round-trip on every
+  // login (each round-trip is ~400ms to InstantDB's API).
   return { userId: user.id, email: user.email ?? email, refreshToken: user.refresh_token };
 }
 

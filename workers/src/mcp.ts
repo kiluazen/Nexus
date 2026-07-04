@@ -65,17 +65,19 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
   // One InstantDB token per session, minted lazily. createToken has no TTL or
   // scope, so minting per call would leak orphan refresh tokens; caching on
   // the agent instance (one Durable Object per user session) keeps it to one.
-  private cachedWidgetToken: string | null = null;
+  // We cache the in-flight promise, not just the value, so a call can start
+  // the mint (~400ms) in parallel with its data fetch and await it at the end.
+  private widgetTokenPromise: Promise<string | null> | null = null;
 
-  private async widgetToken(): Promise<string | null> {
-    if (this.cachedWidgetToken) return this.cachedWidgetToken;
-    try {
-      this.cachedWidgetToken = await mintWidgetToken(this.env, this.props!.email);
-    } catch (e) {
-      console.error("mintWidgetToken failed", e);
-      this.cachedWidgetToken = null;
+  private widgetToken(): Promise<string | null> {
+    if (!this.widgetTokenPromise) {
+      this.widgetTokenPromise = mintWidgetToken(this.env, this.props!.email).catch((e) => {
+        console.error("mintWidgetToken failed", e);
+        this.widgetTokenPromise = null; // let a later call retry
+        return null;
+      });
     }
-    return this.cachedWidgetToken;
+    return this.widgetTokenPromise;
   }
 
   /** Tool result that also feeds the widget: structuredContent for the model
@@ -135,6 +137,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         },
       },
       async (args) => {
+        void this.widgetToken(); // warm the token while we write + read back
         const r = await safe(async () => {
           const logged = await logEntries(this.env, this.user(), args);
           // Return the whole day so the model has context and the widget has
@@ -163,11 +166,12 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         },
       },
       async (args) => {
-        const r = await safe(() => getHistory(this.env, this.user(), args));
         // The live subscription can only reproduce the viewer's own,
         // unfiltered day. Friend or type-filtered views stay static so the
         // live socket never overwrites the card with the wrong data.
         const live = !args.friend_id && !args.type;
+        if (live) void this.widgetToken(); // warm the token alongside the read
+        const r = await safe(() => getHistory(this.env, this.user(), args));
         return r.ok ? this.widgetResult(r.value, { live }) : errorResult(r.error);
       },
     );
