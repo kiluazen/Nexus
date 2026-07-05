@@ -5,6 +5,12 @@
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
+  // Load the vendored InstantDB bundle as a string so the widget can inline it
+  // instead of fetching it from a CDN (the reliable, docs-recommended pattern).
+  "rules": [
+    { "type": "Text", "globs": ["**/*.umd.txt"] }
+  ],
+
   "kv_namespaces": [
     { "binding": "OAUTH_KV",    "id": "eaaed7dedb9a410281488e12716c5041" },
     { "binding": "NEXUS_CACHE", "id": "7b300dd97fac4570a143cc6a462780bb" }
@@ -43,6 +49,9 @@
       "name": "nexus-mcp-staging",
       "compatibility_date": "2026-05-01",
       "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+      "rules": [
+        { "type": "Text", "globs": ["**/*.umd.txt"] }
+      ],
       "workers_dev": true,
       // Explicitly NO custom-domain routes — staging must never claim the prod
       // hostname (mcp.nexus.kushalsm.com) that OpenAI is reviewing.

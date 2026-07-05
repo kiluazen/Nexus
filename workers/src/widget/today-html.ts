@@ -300,6 +300,8 @@ export function widgetHtml(): string {
   });
   window.addEventListener("load", tryLive);
 })();
-</script>
-<script src="https://unpkg.com/@instantdb/core@1.0.49/dist/standalone/index.umd.cjs" defer></script>`;
+</script>`;
+  // The InstantDB library is appended by mcp.ts (inlined from the vendored
+  // bundle) — no external <script src>, so nothing in the render path can be
+  // slow, blocked, or 404.
 }

@@ -7,14 +7,24 @@ import { manageFriends } from "./data/friends";
 import { mintWidgetToken } from "./instant";
 import { WIDGET_URI, widgetHtml } from "./widget/today-html";
 import { ValidationError, todayUtc } from "./lib/dates";
+// The @instantdb/core UMD bundle, vendored and loaded as a string (wrangler
+// Text rule). We inline it into the widget so there's no external <script src>
+// in the render path — the documented, reliable pattern.
+import INSTANT_BUNDLE from "../vendor/instantdb-core.umd.txt";
 
-// CSP for the widget iframe. connect_domains covers fetch + websocket for the
-// live InstantDB session; unpkg serves the @instantdb/core UMD bundle. Both
-// https and wss forms are declared — sandbox handling of wss is inconsistent,
-// and the widget degrades to its static paint if the socket is blocked.
+// The full widget document = app fragment + the inlined InstantDB library.
+// Built by concatenation (not template interpolation) because the minified
+// bundle contains backticks and ${ that would break a template literal.
+function fullWidgetHtml(): string {
+  return widgetHtml() + "\n<script>" + INSTANT_BUNDLE + "</script>";
+}
+
+// CSP for the widget iframe. connect_domains covers fetch + websocket to
+// InstantDB for the live session (both https and wss are declared because
+// sandbox handling of wss is inconsistent). No resource_domains needed: the
+// library is inlined, not fetched from a CDN.
 const WIDGET_CSP = {
   connect_domains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
-  resource_domains: ["https://unpkg.com"],
 };
 
 // Shared so the resource registration and the read callback agree — the MCP
@@ -125,7 +135,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           {
             uri: WIDGET_URI,
             mimeType: "text/html+skybridge",
-            text: widgetHtml(),
+            text: fullWidgetHtml(),
             _meta: WIDGET_META,
           },
         ],
