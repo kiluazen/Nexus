@@ -100,6 +100,16 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
     return { content: [{ type: "text" as const, text: JSON.stringify(payload) }] };
   }
 
+  // Data-only result: the model gets structured data to answer from, but NO
+  // widget renders. Used for reads so an informational question ("what's my
+  // total?") returns a text answer instead of the editable card.
+  private dataResult(payload: Record<string, unknown>) {
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(payload) }],
+      structuredContent: payload,
+    };
+  }
+
   async init() {
     this.server.registerResource(
       "nexus-today",
@@ -159,20 +169,17 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Use this when the user asks what they ate, what workouts they did, their weight trend, calories, macros, protein, progress on an exercise, or wants a summary of any past day or date range. Also call it before logging when a duplicate entry seems possible. Do not use for general nutrition knowledge or workout advice.",
         inputSchema: HistoryInput.shape,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        // No outputTemplate on purpose: reads answer in text, they don't render
+        // the editable card. The card is for logging/correcting, not for
+        // "what's my total?" questions.
         _meta: {
-          "openai/outputTemplate": WIDGET_URI,
           "openai/toolInvocation/invoking": "Checking your Nexus log…",
           "openai/toolInvocation/invoked": "Fetched from Nexus",
         },
       },
       async (args) => {
-        // The live subscription can only reproduce the viewer's own,
-        // unfiltered day. Friend or type-filtered views stay static so the
-        // live socket never overwrites the card with the wrong data.
-        const live = !args.friend_id && !args.type;
-        if (live) void this.widgetToken(); // warm the token alongside the read
         const r = await safe(() => getHistory(this.env, this.user(), args));
-        return r.ok ? this.widgetResult(r.value, { live }) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
 

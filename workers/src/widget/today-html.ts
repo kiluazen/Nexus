@@ -10,6 +10,10 @@
 // Save. The save writes straight to InstantDB from the widget (the "instant"
 // path — no model round-trip) and the live subscription re-renders the card.
 // The model's estimate is a draft; the human confirms it here.
+// ChatGPT caches a widget resource by its ui:// URI (it snapshots the HTML).
+// When the widget's markup/JS changes in a breaking way, BUMP this suffix
+// (…-v2, …-v3) so every client fetches the fresh copy instead of a stale cache.
+// Users still need to hit Refresh on the connector to pull the new tool list.
 export const WIDGET_URI = "ui://widget/nexus-today.html";
 
 export function widgetHtml(): string {
