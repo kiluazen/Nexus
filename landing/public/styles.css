@@ -44,11 +44,11 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url(/assets/discobolus.webp);
-  background-position: right 4vw center;
-  background-repeat: no-repeat;
-  background-size: auto 88%;
-  opacity: 0.5;
+  background-image: url(/assets/diana.webp), url(/assets/discobolus.webp);
+  background-position: left 2vw center, right 3vw center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: auto 82%, auto 88%;
+  opacity: 0.45;
   filter: saturate(0.4) contrast(0.95) brightness(1.12);
 }
 
@@ -113,6 +113,8 @@ a { color: inherit; }
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  text-align: center;
 }
 
 .hero h1 {
@@ -146,7 +148,8 @@ a { color: inherit; }
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 18px 20px;
-  max-width: 520px;
+  width: min(520px, 100%);
+  text-align: left;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -262,5 +265,9 @@ a { color: inherit; }
 @media (max-width: 640px) {
   .hero { padding-top: 6vh; }
   .site-footer { flex-direction: column; gap: 4px; }
-  .bg-art { opacity: 0.16; background-position: right -10vw center; }
+  .bg-art {
+    opacity: 0.35;
+    background-position: left -3vw bottom, right -3vw bottom;
+    background-size: auto 30%, auto 32%;
+  }
 }
