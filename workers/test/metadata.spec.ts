@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleProtectedResource } from "../src/handlers/protected-resource";
-import { computeMealTotals, parseEntry } from "../src/schema/entry-shapes";
+import { computeMealTotals, parseEntry, parseEntryInput, entryInputToStorage } from "../src/schema/entry-shapes";
 import { parseDate, ValidationError } from "../src/lib/dates";
 import { widgetHtml } from "../src/widget/today-html";
 import type { NexusEnv } from "../src/types";
@@ -41,6 +41,23 @@ describe("submission metadata", () => {
     // new Function only PARSES the body; a syntax error (e.g. an unterminated
     // string) throws here, undefined runtime globals (window, instant) do not.
     expect(() => new Function(script as string)).not.toThrow();
+  });
+
+  it("accepts a flat meal, defaults missing macros, and maps to storage", () => {
+    // The shape the model naturally sends — flat, no nested items[].
+    const entry = parseEntryInput({ type: "meal", name: "Cappuccino", calories: 120, protein_g: 6 });
+    const s = entryInputToStorage(entry);
+    expect(s.type).toBe("meal");
+    expect(s.data.totals).toEqual({ calories: 120, protein_g: 6, carbs_g: 0, fat_g: 0 });
+    expect((s.data.items as { name: string; quantity: number }[])[0]).toMatchObject({ name: "Cappuccino", quantity: 1 });
+  });
+
+  it("strips unknown keys but still rejects a wrong discriminator", () => {
+    // Extra keys the model might add are ignored, not rejected.
+    const s = entryInputToStorage(parseEntryInput({ type: "meal", name: "Kiwi", calories: 42, description: "green", quantity: 1 }));
+    expect(s.data.totals).toMatchObject({ calories: 42 });
+    // But a bad discriminator is a clear error (no silent fallback).
+    expect(() => parseEntryInput({ kind: "meal", name: "x", calories: 1 })).toThrow();
   });
 
   it("rejects calendar dates that V8 would silently roll over", () => {

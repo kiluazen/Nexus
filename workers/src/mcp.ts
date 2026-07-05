@@ -147,7 +147,11 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Log to Nexus",
         description:
-          "Use this when the user mentions any workout, exercise, gym session, sport, run, or physical activity they did, any meal, food, snack, or drink they consumed, or a body-weight reading. Log it immediately without asking for confirmation; estimate macros from the description first. Do not use for advice, planning, future intentions, or nutrition questions.",
+          "Use this when the user mentions any workout, exercise, gym session, sport, run, or physical activity they did, any meal, food, snack, or drink they consumed, or a body-weight reading. Log it immediately without asking for confirmation; estimate calories and macros yourself first. " +
+          "Each entry is a flat object keyed by `type`. A meal is: {\"type\":\"meal\",\"name\":\"Cappuccino\",\"calories\":120,\"protein_g\":6,\"carbs_g\":10,\"fat_g\":6}. " +
+          "A workout is: {\"type\":\"workout\",\"exercise\":\"Bench Press\",\"exercise_key\":\"bench_press\",\"sets\":[{\"weight_kg\":60,\"reps\":8}]}. " +
+          "A weight is: {\"type\":\"weight\",\"weight_kg\":74.5}. " +
+          "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         _meta: {
