@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { handleProtectedResource } from "../src/handlers/protected-resource";
 import { computeMealTotals, parseEntry } from "../src/schema/entry-shapes";
 import { parseDate, ValidationError } from "../src/lib/dates";
+import { widgetHtml } from "../src/widget/today-html";
 import type { NexusEnv } from "../src/types";
 
 const env = { BASE_URL: "https://mcp.nexus.kushalsm.com" } as NexusEnv;
@@ -31,6 +32,15 @@ describe("submission metadata", () => {
       exercise_key: "Bench Press",
       sets: [{ weight_kg: 60, reps: 8 }],
     })).toThrow(/exercise_key/);
+  });
+
+  it("widget inline script parses (tsc can't see inside the template string)", () => {
+    const html = widgetHtml();
+    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+    expect(script && script.length).toBeTruthy();
+    // new Function only PARSES the body; a syntax error (e.g. an unterminated
+    // string) throws here, undefined runtime globals (window, instant) do not.
+    expect(() => new Function(script as string)).not.toThrow();
   });
 
   it("rejects calendar dates that V8 would silently roll over", () => {

@@ -166,7 +166,7 @@ export function widgetHtml(): string {
         h += '<div class="nx-row nx-meal" data-edit="' + esc(m.id) + '">' +
           '<span class="name">' + esc(mealName(m)) + '</span>' +
           '<span class="meta">' + n(t.calories) + " kcal · " + n(t.protein_g) + "g" +
-          '<span class="nx-pencil">✎</span></span></div>";
+          '<span class="nx-pencil">✎</span></span></div>';
       });
     }
     if (!workouts.length && !meals.length && !weights.length) {
