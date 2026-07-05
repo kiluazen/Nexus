@@ -44,12 +44,12 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url(/assets/leonidas.jpg);
-  background-position: center 30%;
+  background-image: url(/assets/discobolus.webp);
+  background-position: right 4vw center;
   background-repeat: no-repeat;
-  background-size: cover;
-  opacity: 0.26;
-  filter: saturate(0.55) contrast(0.6) brightness(1.5);
+  background-size: auto 88%;
+  opacity: 0.5;
+  filter: saturate(0.4) contrast(0.95) brightness(1.12);
 }
 
 a { color: inherit; }
@@ -262,4 +262,5 @@ a { color: inherit; }
 @media (max-width: 640px) {
   .hero { padding-top: 6vh; }
   .site-footer { flex-direction: column; gap: 4px; }
+  .bg-art { opacity: 0.16; background-position: right -10vw center; }
 }
