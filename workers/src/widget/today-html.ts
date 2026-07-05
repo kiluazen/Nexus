@@ -1,13 +1,12 @@
 // The Nexus day card — rendered natively inside ChatGPT, styled after
-// Perplexity Finance's dark tables: transparent background, clean aligned
-// rows, muted headers, tabular numbers, a single green accent on the numbers
-// that matter (kcal + protein).
+// Perplexity Finance's dark tables: real card padding, calm regular-weight
+// rows, white text, right-aligned tabular numbers, faint dividers, a green
+// accent only on the numbers that matter (kcal + protein).
 //
-// It's calorie-first. Food view shows the macro totals and an editable meal
-// table; the meal you just logged opens in edit mode so adjusting the estimate
-// is self-evident. Workouts get their own view, auto-selected when you log a
-// workout, with a Food/Workout toggle when the day has both. Only meals are
-// editable (this is a calorie tool); workouts are display-only.
+// Calorie-first: food view shows macro totals + an editable meal table; the
+// meal you just logged opens in edit mode. Workouts get their own view, auto-
+// selected on workout logs, with a Food/Workout toggle when the day has both.
+// Only meals are editable (this is a calorie tool).
 //
 // ChatGPT caches a widget resource by its ui:// URI (it snapshots the HTML).
 // BUMP this suffix (…-v2) on breaking widget changes so clients fetch fresh.
@@ -17,52 +16,55 @@ export function widgetHtml(): string {
   return `<div id="nexus-root"></div>
 <style>
   :root {
-    --nx-ink: #1a1a1a; --nx-mut: #5f5f5f; --nx-faint: #9a9a9a;
-    --nx-accent: #0f9d63; --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(0,0,0,.04);
-    --nx-fieldline: rgba(0,0,0,.16); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
+    --nx-ink: #16181d; --nx-num: #16181d; --nx-mut: #6b7280; --nx-faint: #9aa0aa;
+    --nx-accent: #0f9d63; --nx-line: rgba(0,0,0,.08); --nx-hover: rgba(0,0,0,.035);
+    --nx-fieldline: rgba(0,0,0,.16);  --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --nx-ink: #ececec; --nx-mut: #9b9b9b; --nx-faint: #6f6f6f;
-      --nx-accent: #34d399; --nx-line: rgba(255,255,255,.07); --nx-hover: rgba(255,255,255,.04);
-      --nx-fieldline: rgba(255,255,255,.15); --nx-seg: rgba(255,255,255,.05); --nx-segon: rgba(255,255,255,.12);
+      --nx-ink: #f2f3f5; --nx-num: #e9eaec; --nx-mut: #9096a0; --nx-faint: #6a6f78;
+      --nx-accent: #34d399; --nx-line: rgba(255,255,255,.075); --nx-hover: rgba(255,255,255,.04);
+      --nx-fieldline: rgba(255,255,255,.16); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
   }
   * { box-sizing: border-box; }
-  #nexus-root { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--nx-ink); background: transparent; }
-  .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .nx-date { font-size: 13px; font-weight: 600; color: var(--nx-mut); }
+  #nexus-root {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--nx-ink); background: transparent; padding: 20px 22px;
+  }
+  .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .nx-date { font-size: 13px; font-weight: 500; color: var(--nx-mut); }
   .nx-seg { display: inline-flex; background: var(--nx-seg); border-radius: 8px; padding: 2px; }
-  .nx-seg button { border: 0; background: transparent; color: var(--nx-mut); font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 6px; cursor: pointer; }
+  .nx-seg button { border: 0; background: transparent; color: var(--nx-mut); font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
   .nx-seg button.on { background: var(--nx-segon); color: var(--nx-ink); }
-  .nx-stats { display: flex; gap: 26px; margin-bottom: 18px; }
-  .nx-s { display: flex; flex-direction: column; gap: 2px; }
-  .nx-s b { font-size: 23px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: -.015em; }
+  .nx-stats { display: flex; gap: 30px; margin-bottom: 22px; }
+  .nx-s { display: flex; flex-direction: column; gap: 3px; }
+  .nx-s b { font-size: 25px; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
   .nx-s.hi b { color: var(--nx-accent); }
-  .nx-s span { font-size: 11px; color: var(--nx-faint); }
+  .nx-s span { font-size: 11.5px; color: var(--nx-faint); }
   table.nx-tbl { width: 100%; border-collapse: collapse; }
-  .nx-tbl thead th { font-size: 10.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--nx-faint); text-align: right; padding: 0 0 8px; font-variant-numeric: tabular-nums; }
+  .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 0 0 10px; font-variant-numeric: tabular-nums; }
   .nx-tbl thead th.l { text-align: left; }
-  .nx-tbl tbody td { padding: 11px 0; border-top: 1px solid var(--nx-line); font-size: 14.5px; vertical-align: middle; }
-  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-mut); width: 3.6rem; white-space: nowrap; }
-  .nx-tbl td.nm { color: var(--nx-ink); }
+  .nx-tbl tbody td { padding: 14px 0; border-top: 1px solid var(--nx-line); font-size: 15px; font-weight: 400; vertical-align: middle; line-height: 1.25; }
+  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-num); width: 4rem; white-space: nowrap; padding-left: 14px; }
+  .nx-tbl td.nm { color: var(--nx-ink); padding-right: 8px; }
   tr.nx-tap { cursor: pointer; }
   tr.nx-tap:hover td { background: var(--nx-hover); }
-  .nx-empty { color: var(--nx-faint); font-size: 13.5px; padding: 12px 0; }
+  .nx-empty { color: var(--nx-faint); font-size: 14px; padding: 16px 0; }
   .nx-edit td { padding: 0 !important; border-top: 1px solid var(--nx-line) !important; }
-  .nx-editbox { padding: 13px 2px; }
-  .nx-name { width: 100%; padding: 9px 11px; font-size: 14.5px; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 9px; outline: none; margin-bottom: 10px; }
-  .nx-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .nx-macro { display: flex; flex-direction: column; gap: 4px; }
-  .nx-macro span { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--nx-faint); }
-  .nx-macro input { width: 100%; padding: 8px 9px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 9px; outline: none; }
+  .nx-editbox { padding: 16px 0; }
+  .nx-name { width: 100%; padding: 10px 12px; font-size: 15px; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; margin-bottom: 12px; }
+  .nx-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .nx-macro { display: flex; flex-direction: column; gap: 5px; }
+  .nx-macro span { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--nx-faint); }
+  .nx-macro input { width: 100%; padding: 9px 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; }
   .nx-macro input:focus, .nx-name:focus { border-color: var(--nx-accent); }
-  .nx-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
-  .nx-btns button { padding: 8px 18px; font-size: 13.5px; font-weight: 600; border-radius: 9px; border: 0; cursor: pointer; }
+  .nx-btns { display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; }
+  .nx-btns button { padding: 9px 20px; font-size: 14px; font-weight: 600; border-radius: 10px; border: 0; cursor: pointer; }
   .nx-cancel { background: transparent; color: var(--nx-mut); }
   .nx-save { background: var(--nx-accent); color: #05271a; }
   .nx-save:disabled { opacity: .5; cursor: default; }
-  .nx-err { color: #e5695f; font-size: 12px; margin-top: 8px; }
+  .nx-err { color: #e5695f; font-size: 12px; margin-top: 9px; }
 </style>
 <script>
 (function () {
@@ -167,7 +169,6 @@ export function widgetHtml(): string {
       return;
     }
 
-    // Food view (calorie-first)
     var t = foodTotals(meals);
     h += '<div class="nx-stats">' +
       stat(true, n(t.calories), "kcal") + stat(true, n(t.protein_g) + "g", "protein") +
@@ -251,7 +252,7 @@ export function widgetHtml(): string {
         if (l.entry_type === "workout") hasWorkout = true;
       });
       if (hasWorkout && !hasMeal) view = "workout";
-      else if (loggedMeal) editingId = loggedMeal; // auto-open the meal just logged
+      else if (loggedMeal) editingId = loggedMeal;
     }
   }
 
