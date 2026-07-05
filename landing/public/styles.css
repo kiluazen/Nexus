@@ -44,10 +44,10 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url(/assets/diana.webp), url(/assets/discobolus.webp);
-  background-position: left 2vw center, right 3vw center;
+  background-image: url(/assets/venus.webp), url(/assets/discobolus.webp);
+  background-position: left 5vw center, right 3vw center;
   background-repeat: no-repeat, no-repeat;
-  background-size: auto 82%, auto 88%;
+  background-size: auto 80%, auto 88%;
   opacity: 0.45;
   filter: saturate(0.4) contrast(0.95) brightness(1.12);
 }
