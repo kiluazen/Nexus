@@ -44,12 +44,11 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url(/assets/venus.webp), url(/assets/discobolus.webp);
+  background-image: url(/assets/venus.webp?v=2), url(/assets/discobolus.webp?v=2);
   background-position: left 5vw center, right 3vw center;
   background-repeat: no-repeat, no-repeat;
   background-size: auto 80%, auto 88%;
-  opacity: 0.45;
-  filter: saturate(0.4) contrast(0.95) brightness(1.12);
+  opacity: 0.92;
 }
 
 a { color: inherit; }
@@ -266,7 +265,7 @@ a { color: inherit; }
   .hero { padding-top: 6vh; }
   .site-footer { flex-direction: column; gap: 4px; }
   .bg-art {
-    opacity: 0.35;
+    opacity: 0.6;
     background-position: left -3vw bottom, right -3vw bottom;
     background-size: auto 30%, auto 32%;
   }
