@@ -1,0 +1,19 @@
+# Security headers on everything
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; script-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+# Short cache on HTML pages so edits show up quickly
+/
+  Cache-Control: public, max-age=300
+/get-started/*
+  Cache-Control: public, max-age=300
+/usage-guide/*
+  Cache-Control: public, max-age=300
+/privacy-policy/*
+  Cache-Control: public, max-age=300
+/terms-of-service/*
+  Cache-Control: public, max-age=300
