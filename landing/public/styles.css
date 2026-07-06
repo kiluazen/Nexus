@@ -45,7 +45,7 @@ body {
   z-index: -1;
   pointer-events: none;
   background-image: url(/assets/venus.webp?v=4), url(/assets/discobolus.webp?v=3);
-  background-position: left 5vw center, right 3vw center;
+  background-position: left center, right 3vw center;
   background-repeat: no-repeat, no-repeat;
   background-size: auto 80%, auto 88%;
   opacity: 0.92;
