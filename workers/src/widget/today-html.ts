@@ -82,7 +82,7 @@ export function widgetHtml(): string {
     background-image: url("${DISCOBOLUS_DATA_URI}"); background-position: right bottom;
   }
   @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
-  @media (max-width: 480px) { #nexus-root { --nx-venus-w: 16%; --nx-disco-w: 29%; } }
+  @media (max-width: 480px) { #nexus-root { --nx-venus-w: 32%; --nx-disco-w: 58%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
