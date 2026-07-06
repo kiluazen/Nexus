@@ -37,7 +37,11 @@ export function widgetHtml(): string {
       --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
       --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
       --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
-      --nx-boxbg: rgba(255,255,255,.05); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      /* boxbg is a dark scrim here (not a white tint like the light-mode
+         value) — the statues now show in full behind these boxes with a
+         brightening "screen" blend, so the box needs to dim what's behind
+         it, not lighten it, or the CARBS/FAT labels wash out. */
+      --nx-boxbg: rgba(0,0,0,.4); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
   }
   * { box-sizing: border-box; }
@@ -48,12 +52,13 @@ export function widgetHtml(): string {
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
   /* Upper-body busts flank the card — ::before = Venus (left), ::after =
-     Discobolus (right). Blended against the card surface rather than just
-     faded (multiply on light: shadows read as ink against paper; screen on
-     dark: highlights glow off the dark surface) so they read as carved marble
-     instead of a flat gray watermark. Anchored below the bottom edge so the
-     crop's cut line is off-screen, and each faded toward the center with a
-     mask so they keep a clear gap and never sit over the meal text. */
+     Discobolus (right). Shown in full — no fade — cropped only by each box's
+     own 52% width. Blended against the card surface (multiply on light:
+     shadows read as ink against paper; screen on dark: highlights glow off
+     the dark surface) so they read as carved marble instead of a flat gray
+     watermark. Anchored below the bottom edge so the crop's cut line is
+     off-screen. Smaller on phone widths, matching the landing page's own
+     mobile treatment of the same two statues. */
   #nexus-root::before, #nexus-root::after {
     content: ""; position: absolute; top: 0; bottom: 0; width: 52%; z-index: 0;
     pointer-events: none; background-repeat: no-repeat; opacity: var(--nx-god-op);
@@ -62,18 +67,14 @@ export function widgetHtml(): string {
   #nexus-root::before {
     left: 0; background-image: url("${VENUS_DATA_URI}");
     background-position: left -6px bottom -30px; background-size: auto var(--nx-god-h);
-    -webkit-mask-image: linear-gradient(to right, #000 14%, transparent 80%);
-    mask-image: linear-gradient(to right, #000 14%, transparent 80%);
   }
   #nexus-root::after {
     right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
     background-position: right -14px bottom -30px; background-size: auto var(--nx-god-h);
     opacity: calc(var(--nx-god-op) * 1.2);  /* the discus throw reads smaller in-frame — boost to match Venus's presence */
-    -webkit-mask-image: linear-gradient(to left, #000 6%, transparent 56%);
-    mask-image: linear-gradient(to left, #000 6%, transparent 56%);
   }
   @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-h: 56%; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-h: 34%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -268,15 +269,13 @@ export function widgetHtml(): string {
     h += progRow("Fat", "<b>" + n(t.fat_g) + "</b> g", 0, false);
     h += "</div></div>";
 
+    // Phone layout: both goals as rings, no carbs/fat — nobody's reading
+    // those numbers off a two-inch card.
     h += '<div class="nx-prog-narrow">';
     h += '<div class="nx-rings-row">';
     h += '<div>' + ring(t.calories / GOAL_KCAL, n(t.calories), "of " + GOAL_KCAL) + '<div class="nx-ring-cap">Calories</div></div>';
     h += '<div>' + ring(t.protein_g / GOAL_PROTEIN, n(t.protein_g) + "g", "of " + GOAL_PROTEIN + "g") + '<div class="nx-ring-cap">Protein</div></div>';
-    h += '</div>';
-    h += '<div class="nx-macros2">';
-    h += progRow("Carbs", "<b>" + n(t.carbs_g) + "</b> g", 0, false);
-    h += progRow("Fat", "<b>" + n(t.fat_g) + "</b> g", 0, false);
-    h += "</div></div>";
+    h += '</div></div>';
 
     if (meals.length) {
       var showId = findMeal(selectedId) ? selectedId : meals[0].id;
