@@ -63,7 +63,7 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
   // Reuse the magic-code brute-force lock (keyed by email) for password tries.
   if (await isCodeLocked(env, email)) {
     return Response.json(
-      { error: "Too many attempts. Wait a minute and try again." },
+      { error: "Too many attempts. Wait about 10 minutes and try again." },
       { status: 429 },
     );
   }
@@ -76,9 +76,11 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
         : await signInWithPassword(env, email, password);
   } catch (e) {
     if (e instanceof AuthError) {
-      // Only credential failures count toward the lock; "exists"/"weak" are
-      // user-fixable form errors, not guessing attempts.
-      if (e.code === "bad_password" || e.code === "no_account" || e.code === "no_password") {
+      // Only a WRONG PASSWORD against a real account counts toward the lock.
+      // "no_account"/"no_password" are wrong-email / wrong-method mistakes (a
+      // reviewer typo), not password guessing — locking on those would tell a
+      // reviewer the credentials are broken. "exists"/"weak" are form errors.
+      if (e.code === "bad_password") {
         await recordCodeFailure(env, email);
       }
       const status = e.code === "exists" ? 409 : e.code === "weak" ? 400 : 401;

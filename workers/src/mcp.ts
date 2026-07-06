@@ -33,6 +33,8 @@ const WIDGET_CSP = {
 const WIDGET_META = {
   "openai/widgetCSP": WIDGET_CSP,
   "openai/widgetPrefersBorder": true,
+  // Required for directory submission: pins the origin the widget renders from.
+  "openai/widgetDomain": "https://mcp.nexus.kushalsm.com",
   "openai/widgetDescription":
     "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
 };

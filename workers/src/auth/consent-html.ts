@@ -164,7 +164,6 @@ ${googleBlock}
     const password = $("#password").value;
     if (!email || !password) return;
     $("#submit").disabled = true;
-    const label = $("#submit").textContent;
     $("#submit").textContent = mode === "signin" ? "Signing in…" : "Creating…";
     try {
       const { ok, data } = await post({ action: mode, email, password });
@@ -175,7 +174,11 @@ ${googleBlock}
     } catch (ex) {
       err("Network error. Try again.");
     } finally {
-      $("#submit").disabled = false; $("#submit").textContent = label;
+      // Re-derive from the CURRENT mode: an auto-switch (no_account/exists) may
+      // have flipped it, so restoring a captured pre-request label would leave
+      // the button contradicting the form (e.g. "Sign in" while in signup mode).
+      $("#submit").disabled = false;
+      $("#submit").textContent = mode === "signin" ? "Sign in" : "Create account";
     }
   });
 
