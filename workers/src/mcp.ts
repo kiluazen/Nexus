@@ -46,7 +46,6 @@ const WIDGET_META = {
   ui: {
     csp: WIDGET_CSP,
     prefersBorder: true,
-    domain: "https://mcp.nexus.kushalsm.com",
   },
 };
 
