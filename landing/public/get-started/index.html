@@ -6,7 +6,7 @@
     <title>Add Nexus to ChatGPT</title>
     <meta
       name="description"
-      content="Add Nexus to ChatGPT as a connector: enable developer mode, create the app, paste the Nexus MCP URL, and sign in."
+      content="Add Nexus to ChatGPT as a connector: create the app with the Nexus MCP URL, sign in, and start logging."
     >
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="stylesheet" href="/styles.css">
@@ -38,17 +38,11 @@
 
       <ol class="setup-steps">
         <li>
-          <h3>Turn on developer mode</h3>
-          <p>In ChatGPT, open <code>Settings → Connectors → Advanced</code> and enable
-          <strong>Developer mode</strong>.</p>
-        </li>
-        <li>
-          <h3>Create a new connector</h3>
-          <p>Back in <code>Connectors</code>, choose <strong>Create</strong> and name it Nexus.</p>
-        </li>
-        <li>
-          <h3>Paste the Nexus MCP URL</h3>
-          <p>Use this as the connector's server URL:</p>
+          <h3>Create the connector</h3>
+          <p>In ChatGPT, open <code>Settings → Connectors → Advanced</code>, enable
+          <strong>Developer mode</strong>, then choose <strong>Create</strong> and name it Nexus.</p>
+          <p>Or: <code>Settings → Apps</code>, scroll down, and <strong>Create app</strong>.</p>
+          <p>Use this as the server URL:</p>
           <div class="endpoint-row">
             <code id="mcp-url">https://mcp.nexus.kushalsm.com/mcp</code>
             <button id="copy-btn" type="button">Copy</button>
