@@ -82,13 +82,24 @@ export function widgetHtml(): string {
   .nx-seg button { border: 0; background: transparent; color: var(--nx-mut); font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
   .nx-seg button.on { background: var(--nx-segon); color: var(--nx-ink); }
 
-  /* Progress: calorie ring + macro rows */
-  .nx-prog { display: flex; align-items: center; gap: 22px; margin-bottom: 18px; }
+  /* Progress: calorie ring + macro rows on wide (laptop) widths; both goals
+     as rings side by side on narrow (phone) widths — swapped by media query,
+     not JS, so it re-flows with the host's own viewport/split-screen resize. */
+  .nx-prog-wide { display: flex; align-items: center; gap: 22px; margin-bottom: 18px; }
+  .nx-prog-narrow { display: none; }
   .nx-ring { flex: 0 0 auto; }
   .nx-ring circle.trk { stroke: var(--nx-track); }
   .nx-ring circle.val { stroke: var(--nx-accent); transition: stroke-dashoffset .5s ease; }
   .nx-ring text.big { fill: var(--nx-num); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
   .nx-ring text.sm { fill: var(--nx-faint); font-size: 8px; font-weight: 500; }
+  @media (max-width: 480px) {
+    .nx-prog-wide { display: none; }
+    .nx-prog-narrow { display: block; margin-bottom: 18px; }
+    .nx-rings-row { display: flex; justify-content: space-around; gap: 12px; margin-bottom: 14px; }
+    .nx-rings-row .nx-ring { width: 96px; height: 96px; }
+    .nx-rings-row .nx-ring text.big { font-size: 17px; }
+    .nx-ring-cap { text-align: center; font-size: 11px; color: var(--nx-mut); margin-top: 4px; }
+  }
   .nx-macros2 { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .nx-m2-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .nx-m2 .lbl { font-size: 12.5px; color: var(--nx-mut); }
@@ -226,7 +237,7 @@ export function widgetHtml(): string {
     if (view === "workout") {
       var totalSets = 0;
       workouts.forEach(function (w) { totalSets += (w.sets || []).length; });
-      h += '<div class="nx-prog"><div class="nx-macros2">' +
+      h += '<div class="nx-prog-wide"><div class="nx-macros2">' +
         progRow("Exercises", "<b>" + workouts.length + "</b>", 0, false) +
         progRow("Sets", "<b>" + totalSets + "</b>", 0, false) +
         (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "") +
@@ -245,12 +256,24 @@ export function widgetHtml(): string {
       return;
     }
 
-    // FOOD view — ring + macro goals
+    // FOOD view — calorie ring + protein bar on wide widths; calorie ring +
+    // protein ring side by side on narrow (phone) widths. Both render into
+    // the DOM; CSS picks one per breakpoint (see .nx-prog-wide/-narrow).
     var t = foodTotals(meals);
-    h += '<div class="nx-prog">';
+    h += '<div class="nx-prog-wide">';
     h += ring(t.calories / GOAL_KCAL, n(t.calories), "of " + GOAL_KCAL);
     h += '<div class="nx-macros2">';
     h += progRow("Protein", "<b>" + n(t.protein_g) + "</b> / " + GOAL_PROTEIN + "g", t.protein_g / GOAL_PROTEIN, true);
+    h += progRow("Carbs", "<b>" + n(t.carbs_g) + "</b> g", 0, false);
+    h += progRow("Fat", "<b>" + n(t.fat_g) + "</b> g", 0, false);
+    h += "</div></div>";
+
+    h += '<div class="nx-prog-narrow">';
+    h += '<div class="nx-rings-row">';
+    h += '<div>' + ring(t.calories / GOAL_KCAL, n(t.calories), "of " + GOAL_KCAL) + '<div class="nx-ring-cap">Calories</div></div>';
+    h += '<div>' + ring(t.protein_g / GOAL_PROTEIN, n(t.protein_g) + "g", "of " + GOAL_PROTEIN + "g") + '<div class="nx-ring-cap">Protein</div></div>';
+    h += '</div>';
+    h += '<div class="nx-macros2">';
     h += progRow("Carbs", "<b>" + n(t.carbs_g) + "</b> g", 0, false);
     h += progRow("Fat", "<b>" + n(t.fat_g) + "</b> g", 0, false);
     h += "</div></div>";
