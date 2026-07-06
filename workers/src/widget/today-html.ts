@@ -29,7 +29,7 @@ export function widgetHtml(): string {
     --nx-accent: #1d2bb8; --nx-onacc: #ffffff;
     --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.05); --nx-selbg: rgba(29,43,184,.10);
     --nx-track: rgba(0,0,0,.09); --nx-fieldline: rgba(0,0,0,.16);
-    --nx-boxbg: rgba(0,0,0,.02); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
+    --nx-boxbg: rgba(0,0,0,.028); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -37,13 +37,13 @@ export function widgetHtml(): string {
       --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
       --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
       --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
-      --nx-boxbg: rgba(255,255,255,.03); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      --nx-boxbg: rgba(255,255,255,.05); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
   }
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
-    --nx-god-op: .12; --nx-god-h: 72%;
+    --nx-god-op: .085; --nx-god-h: 68%;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
@@ -58,19 +58,20 @@ export function widgetHtml(): string {
   }
   #nexus-root::before {
     left: 0; background-image: url("${VENUS_DATA_URI}");
-    background-position: left -12px bottom -34px; background-size: auto var(--nx-god-h);
-    -webkit-mask-image: linear-gradient(to right, #000 2%, transparent 58%);
-    mask-image: linear-gradient(to right, #000 2%, transparent 58%);
+    background-position: left -6px bottom -30px; background-size: auto var(--nx-god-h);
+    opacity: calc(var(--nx-god-op) * 1.25);  /* Venus is light marble — small boost so she reads */
+    -webkit-mask-image: linear-gradient(to right, #000 14%, transparent 80%);
+    mask-image: linear-gradient(to right, #000 14%, transparent 80%);
   }
   #nexus-root::after {
     right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
-    background-position: right -16px bottom -34px; background-size: auto var(--nx-god-h);
-    -webkit-mask-image: linear-gradient(to left, #000 2%, transparent 58%);
-    mask-image: linear-gradient(to left, #000 2%, transparent 58%);
+    background-position: right -14px bottom -30px; background-size: auto var(--nx-god-h);
+    -webkit-mask-image: linear-gradient(to left, #000 6%, transparent 56%);
+    mask-image: linear-gradient(to left, #000 6%, transparent 56%);
   }
-  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .17; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-op: .09; --nx-god-h: 58%; } }
-  @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .13; } }
+  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .12; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-op: .07; --nx-god-h: 56%; } }
+  @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .095; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
