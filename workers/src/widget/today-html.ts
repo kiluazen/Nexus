@@ -1,15 +1,16 @@
 // The Nexus day card — rendered natively inside ChatGPT.
 //
 // Calorie-first, goal-aware: a progress ring shows the day's kcal against a
-// daily target, protein against its own target, and carbs/fat read out beside
-// it. Below the ring is the meal list (tap any row) and — kept SEPARATE and
-// always visible — one constant editor that reflects whichever meal is
-// selected, so "edit + save" is a fixed place, not an inline row swap.
-// Workouts get their own view, auto-selected on workout logs.
+// daily target, protein against its own target, carbs/fat read out beside it.
+// Below, two separately-encased boxes make the structure self-evident without
+// labels: the meal list (tap a row) and one constant editor that reflects
+// whatever's selected. Workouts get their own view, auto-selected on workout
+// logs. Accent is the landing cobalt; card background is transparent so it
+// matches ChatGPT's own light/dark surface.
 //
-// Venus + Discobolus (the landing sculptures) sit behind it all as a faint,
-// theme-adaptive watermark. Transparent card background so it matches ChatGPT's
-// own light/dark surface.
+// Venus (left) + Discobolus (right) flank the card as a faint, theme-adaptive
+// watermark, each faded toward the center with a CSS mask so they leave a clear
+// gap and never sit behind the meal text.
 //
 // ChatGPT caches a widget resource by its ui:// URI (it snapshots the HTML).
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
@@ -17,8 +18,6 @@ import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
 export const WIDGET_URI = "ui://widget/nexus-today-v2.html";
 
-// Daily targets (defaults). Kept in one place so they're easy to make
-// per-user later; for now the whole surface reads "how full" against these.
 const GOAL_KCAL = 2100;
 const GOAL_PROTEIN = 120;
 
@@ -27,40 +26,52 @@ export function widgetHtml(): string {
 <style>
   :root {
     --nx-ink: #16181d; --nx-num: #16181d; --nx-mut: #6b7280; --nx-faint: #9aa0aa;
-    --nx-accent: #0f9d63; --nx-line: rgba(0,0,0,.08); --nx-hover: rgba(0,0,0,.045);
+    --nx-accent: #1d2bb8; --nx-onacc: #ffffff;
+    --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.05); --nx-selbg: rgba(29,43,184,.10);
     --nx-track: rgba(0,0,0,.09); --nx-fieldline: rgba(0,0,0,.16);
-    --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
+    --nx-boxbg: rgba(0,0,0,.028); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --nx-ink: #f2f3f5; --nx-num: #e9eaec; --nx-mut: #9096a0; --nx-faint: #6a6f78;
-      --nx-accent: #34d399; --nx-line: rgba(255,255,255,.075); --nx-hover: rgba(255,255,255,.055);
+      --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
+      --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
       --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
-      --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      --nx-boxbg: rgba(255,255,255,.05); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
   }
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
-    --nx-god-op: .11; --nx-god-v: 66%; --nx-god-d: 74%;
+    --nx-god-op: .085; --nx-god-h: 68%;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
-  /* Venus (left) + Discobolus (right) as a faint watermark BEHIND the content.
-     Grayscale on transparent: on a light bg only the statue's shadows read; on a
-     dark bg only the highlights — so one asset adapts to both themes. Lives on
-     ::before (untouched by innerHTML re-renders); content sits above via z-index. */
-  #nexus-root::before {
-    content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-    background-image: url("${VENUS_DATA_URI}"), url("${DISCOBOLUS_DATA_URI}");
-    background-repeat: no-repeat, no-repeat;
-    background-position: left -14px bottom -6px, right -18px bottom -6px;
-    background-size: auto var(--nx-god-v), auto var(--nx-god-d);
-    opacity: var(--nx-god-op);
+  /* Upper-body busts flank the card — ::before = Venus (left), ::after =
+     Discobolus (right). Grayscale (shadows read on light, highlights on dark),
+     anchored below the bottom edge so the crop's cut line is off-screen, and
+     each faded toward the center with a mask so they keep a clear gap and never
+     sit over the meal text. */
+  #nexus-root::before, #nexus-root::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 52%; z-index: 0;
+    pointer-events: none; background-repeat: no-repeat; opacity: var(--nx-god-op);
   }
-  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .16; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-op: .085; --nx-god-v: 50%; --nx-god-d: 56%; } }
-  @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .12; } }
+  #nexus-root::before {
+    left: 0; background-image: url("${VENUS_DATA_URI}");
+    background-position: left -6px bottom -30px; background-size: auto var(--nx-god-h);
+    opacity: calc(var(--nx-god-op) * 1.25);  /* Venus is light marble — small boost so she reads */
+    -webkit-mask-image: linear-gradient(to right, #000 14%, transparent 80%);
+    mask-image: linear-gradient(to right, #000 14%, transparent 80%);
+  }
+  #nexus-root::after {
+    right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
+    background-position: right -14px bottom -30px; background-size: auto var(--nx-god-h);
+    -webkit-mask-image: linear-gradient(to left, #000 6%, transparent 56%);
+    mask-image: linear-gradient(to left, #000 6%, transparent 56%);
+  }
+  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .12; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-op: .07; --nx-god-h: 56%; } }
+  @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .095; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -70,7 +81,7 @@ export function widgetHtml(): string {
   .nx-seg button.on { background: var(--nx-segon); color: var(--nx-ink); }
 
   /* Progress: calorie ring + macro rows */
-  .nx-prog { display: flex; align-items: center; gap: 22px; margin-bottom: 20px; }
+  .nx-prog { display: flex; align-items: center; gap: 22px; margin-bottom: 18px; }
   .nx-ring { flex: 0 0 auto; }
   .nx-ring circle.trk { stroke: var(--nx-track); }
   .nx-ring circle.val { stroke: var(--nx-accent); transition: stroke-dashoffset .5s ease; }
@@ -84,35 +95,36 @@ export function widgetHtml(): string {
   .nx-bar { height: 5px; background: var(--nx-track); border-radius: 3px; margin-top: 6px; overflow: hidden; }
   .nx-bar > i { display: block; height: 100%; background: var(--nx-accent); border-radius: 3px; transition: width .5s ease; }
 
-  /* Meal list */
-  table.nx-tbl { width: 100%; border-collapse: collapse; }
-  .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 0 0 8px; font-variant-numeric: tabular-nums; }
-  .nx-tbl thead th.l { text-align: left; }
-  .nx-tbl tbody td { padding: 12px 0; border-top: 1px solid var(--nx-line); font-size: 15px; font-weight: 400; vertical-align: middle; line-height: 1.25; }
-  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-num); width: 4rem; white-space: nowrap; padding-left: 14px; }
-  .nx-tbl td.nm { color: var(--nx-ink); padding-right: 8px; }
+  /* Two encased boxes: meal list + editor */
+  .nx-box { border: 1px solid var(--nx-line); border-radius: 14px; background: var(--nx-boxbg); margin-bottom: 12px; }
+  .nx-box.list { padding: 6px 8px 8px; }
+  .nx-box.editor { padding: 16px; }
+
+  table.nx-tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 6px 12px 8px 0; font-variant-numeric: tabular-nums; }
+  .nx-tbl thead th.l { text-align: left; padding-left: 12px; }
+  .nx-tbl tbody td { padding: 12px 0; font-size: 15px; font-weight: 400; vertical-align: middle; line-height: 1.25; }
+  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-num); width: 4rem; white-space: nowrap; padding-right: 12px; }
+  .nx-tbl td.nm { color: var(--nx-ink); padding-left: 12px; }
+  /* Rows become clean rounded pills on hover / when selected — no hard-cornered
+     rectangle, no left accent bar. Same radius in both states. */
   tr.nx-tap { cursor: pointer; }
   tr.nx-tap:hover td { background: var(--nx-hover); }
-  tr.nx-sel td { background: var(--nx-hover); }
-  tr.nx-sel td.nm { box-shadow: inset 3px 0 0 var(--nx-accent); padding-left: 10px; }
-  .nx-empty { color: var(--nx-faint); font-size: 14px; padding: 16px 0; }
+  tr.nx-sel td { background: var(--nx-selbg); }
+  tr.nx-tap:hover td:first-child, tr.nx-sel td:first-child { border-top-left-radius: 11px; border-bottom-left-radius: 11px; }
+  tr.nx-tap:hover td:last-child, tr.nx-sel td:last-child { border-top-right-radius: 11px; border-bottom-right-radius: 11px; }
+  .nx-empty { color: var(--nx-faint); font-size: 14px; padding: 12px; }
 
-  /* Constant editor (separated from the list) */
-  .nx-editor { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--nx-line); }
-  .nx-eh { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--nx-faint); margin-bottom: 11px; }
-  .nx-eh b { color: var(--nx-mut); font-weight: 600; text-transform: none; letter-spacing: 0; }
   .nx-name { width: 100%; padding: 10px 12px; font-size: 15px; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; margin-bottom: 12px; }
   .nx-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .nx-macro { display: flex; flex-direction: column; gap: 5px; }
   .nx-macro span { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--nx-faint); }
   .nx-macro input { width: 100%; padding: 9px 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; }
   .nx-macro input:focus, .nx-name:focus { border-color: var(--nx-accent); }
-  .nx-btns { display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; }
-  .nx-btns button { padding: 9px 22px; font-size: 14px; font-weight: 600; border-radius: 10px; border: 0; cursor: pointer; }
-  .nx-save { background: var(--nx-accent); color: #05271a; }
+  .nx-btns { display: flex; justify-content: flex-end; margin-top: 14px; }
+  .nx-save { padding: 9px 24px; font-size: 14px; font-weight: 600; border-radius: 10px; border: 0; cursor: pointer; background: var(--nx-accent); color: var(--nx-onacc); }
   .nx-save:disabled { opacity: .5; cursor: default; }
   .nx-err { color: #e5695f; font-size: 12px; margin-top: 9px; }
-  @media (prefers-color-scheme: dark) { .nx-save { color: #04140d; } }
 </style>
 <script>
 (function () {
@@ -120,7 +132,7 @@ export function widgetHtml(): string {
   var root = document.getElementById("nexus-root");
   var live = false;
   var db = null;
-  var selectedId = null;   // meal shown in the constant editor
+  var selectedId = null;
   var currentData = null;
   var saveError = "";
   var view = "food";
@@ -174,10 +186,10 @@ export function widgetHtml(): string {
     return '<label class="nx-macro"><span>' + label + '</span>' +
       '<input id="' + id + '" type="number" inputmode="decimal" min="0" step="1" value="' + n(val) + '"/></label>';
   }
-  function editorBlock(m) {
+  function editorBox(m) {
     var id = m.id, t = m.totals || {};
     var firstName = (m.items && m.items[0] && m.items[0].name) || m.meal_type || "";
-    var h = '<div class="nx-editor"><div class="nx-eh">Edit &mdash; <b>' + esc(mealName(m) || "meal") + "</b></div>";
+    var h = '<div class="nx-box editor">';
     h += '<input class="nx-name" id="nx-name-' + esc(id) + '" value="' + esc(firstName) + '" placeholder="What was it?"/>';
     h += '<div class="nx-macros">';
     h += macroInput("nx-kcal-" + esc(id), "kcal", t.calories);
@@ -217,7 +229,7 @@ export function widgetHtml(): string {
         progRow("Sets", "<b>" + totalSets + "</b>", 0, false) +
         (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "") +
         "</div></div>";
-      h += '<table class="nx-tbl"><thead><tr><th class="l">Exercise</th><th>Sets</th><th>Top</th></tr></thead><tbody>';
+      h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>Sets</th><th>Top</th></tr></thead><tbody>';
       workouts.forEach(function (w) {
         var sets = Array.isArray(w.sets) ? w.sets : [];
         var top = null;
@@ -226,7 +238,7 @@ export function widgetHtml(): string {
           '<td class="num">' + (sets.length || (w.duration_min ? w.duration_min + "m" : "-")) + '</td>' +
           '<td class="num">' + (top != null ? top + "kg" : "-") + "</td></tr>";
       });
-      h += "</tbody></table>";
+      h += "</tbody></table></div>";
       root.innerHTML = h;
       return;
     }
@@ -243,7 +255,7 @@ export function widgetHtml(): string {
 
     if (meals.length) {
       var showId = findMeal(selectedId) ? selectedId : meals[0].id;
-      h += '<table class="nx-tbl"><thead><tr><th class="l">Meal</th><th>kcal</th><th>protein</th></tr></thead><tbody>';
+      h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>kcal</th><th>protein</th></tr></thead><tbody>';
       meals.forEach(function (m) {
         var mt = m.totals || {};
         var sel = String(m.id) === String(showId);
@@ -252,20 +264,19 @@ export function widgetHtml(): string {
           '<td class="num">' + n(mt.calories) + '</td>' +
           '<td class="num">' + n(mt.protein_g) + "g</td></tr>";
       });
-      h += "</tbody></table>";
+      h += "</tbody></table></div>";
       var selMeal = findMeal(showId) || meals[0];
-      if (selMeal) h += editorBlock(selMeal);
+      if (selMeal) h += editorBox(selMeal);
     } else if (!workouts.length && !weights.length) {
-      h += '<div class="nx-empty">Nothing logged yet' + (single ? " today" : "") + ". Tell ChatGPT what you ate.</div>";
+      h += '<div class="nx-box list"><div class="nx-empty">Nothing logged yet' + (single ? " today" : "") + ". Tell ChatGPT what you ate.</div></div>";
     }
     root.innerHTML = h;
   }
 
   function applyData(data) {
     currentData = data;
-    // Don't clobber an edit in progress: skip re-render while a field is focused.
     var ae = document.activeElement;
-    var typing = ae && ae.closest && ae.closest(".nx-editor");
+    var typing = ae && ae.closest && ae.closest(".nx-box.editor");
     if (!typing) render(data);
   }
 
@@ -326,7 +337,7 @@ export function widgetHtml(): string {
         if (l.entry_type === "workout") hasWorkout = true;
       });
       if (hasWorkout && !hasMeal) view = "workout";
-      else if (loggedMeal) selectedId = loggedMeal;   // the meal you just logged opens in the editor
+      else if (loggedMeal) selectedId = loggedMeal;
     }
   }
 
