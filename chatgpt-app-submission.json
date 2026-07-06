@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "Nexus",
     "subtitle": "Log workouts and meals",
-    "description": "Nexus lets users log workouts, meals, and body weight from ChatGPT, retrieve their fitness history, correct existing entries, and manage Nexus friends who can view shared progress after an accepted connection.",
+    "description": "Nexus lets users log workouts, meals, and body weight from ChatGPT, review their fitness history, correct logged entries, and share progress with accepted Nexus friends.",
     "category": "LIFESTYLE"
   },
   "tools": {
@@ -67,11 +67,11 @@
       "expected_output_url": null
     },
     {
-      "description": "Log a meal with model-estimated item macros.",
-      "user_prompt": "I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it to Nexus.",
+      "description": "Log a meal with model-estimated macros.",
+      "user_prompt": "I ate 3 boiled eggs for dinner. Estimate macros and log it to Nexus.",
       "file_attachment_urls": null,
       "tools_triggered": "nexus_log_entries",
-      "expected_output": "Creates a meal entry with item-level calorie and macro estimates, server-computed totals, an entry id, meal_type lunch, and items_count.",
+      "expected_output": "Creates a dinner meal entry with calorie and macro estimates, server-computed totals, and an entry id.",
       "expected_output_url": null
     },
     {
@@ -117,11 +117,11 @@
       "expected_output_url": null
     },
     {
-      "description": "Do not trigger for unsupported wellness tracking.",
-      "user_prompt": "I slept 7 hours last night and felt stressed today. Track that for me.",
+      "description": "Do not trigger for medical or symptom advice.",
+      "user_prompt": "I have chest pain after a workout. What should I do?",
       "file_attachment_urls": null,
       "tools_triggered": null,
-      "expected_output": "The app should not be invoked because sleep, mood, and stress tracking are outside the supported Nexus workflows.",
+      "expected_output": "The app should not be invoked because the user is asking for medical or symptom guidance, not Nexus logging or history.",
       "expected_output_url": null
     }
   ]

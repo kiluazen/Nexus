@@ -31,6 +31,11 @@ const WIDGET_CSP = {
 
 // Shared so the resource registration and the read callback agree — the MCP
 // SDK does not merge registration _meta into read results.
+//
+// Both the legacy OpenAI-namespaced keys AND the vendor-neutral MCP Apps
+// keys are sent. ChatGPT only recognizes its own `openai/*` keys; Claude
+// (and other spec-following clients) only recognize `ui.*`. Same values,
+// two names, so both hosts can find the widget.
 const WIDGET_META = {
   "openai/widgetCSP": WIDGET_CSP,
   "openai/widgetPrefersBorder": true,
@@ -38,6 +43,11 @@ const WIDGET_META = {
   "openai/widgetDomain": "https://mcp.nexus.kushalsm.com",
   "openai/widgetDescription":
     "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
+  ui: {
+    csp: WIDGET_CSP,
+    prefersBorder: true,
+    domain: "https://mcp.nexus.kushalsm.com",
+  },
 };
 
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
@@ -165,6 +175,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "openai/outputTemplate": WIDGET_URI,
           "openai/toolInvocation/invoking": "Logging to Nexus…",
           "openai/toolInvocation/invoked": "Logged to Nexus",
+          ui: { resourceUri: WIDGET_URI },
         },
       },
       async (args) => {

@@ -6,6 +6,7 @@ import {
   parseEntryInput,
   entryInputToStorage,
   type MealTotals,
+  type EntryUpdateDataInput,
 } from "../schema/entry-shapes";
 import { ValidationError, parseDate, todayUtc, addDaysUtc } from "../lib/dates";
 import { getGoalForDate } from "./goals";
@@ -252,7 +253,7 @@ export async function getHistory(
 export async function updateEntry(
   env: NexusEnv,
   user: UserCtx,
-  args: { entry_id: string; data: Record<string, unknown> },
+  args: { entry_id: string; data: EntryUpdateDataInput },
 ): Promise<Record<string, unknown>> {
   // Ownership check runs permission-scoped: if the entry belongs to someone
   // else, the scoped query simply can't see it.

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EntryInput } from "./entry-shapes";
+import { EntryInput, EntryUpdateDataInput } from "./entry-shapes";
 export { GoalInput } from "./goal-shapes";
 export type { GoalInputT } from "./goal-shapes";
 
@@ -25,7 +25,7 @@ export const HistoryInput = z.object({
 
 export const UpdateInput = z.object({
   entry_id: z.string().min(1),
-  data: z.record(z.string(), z.unknown()),
+  data: EntryUpdateDataInput,
 });
 
 export const FriendsInput = z.object({

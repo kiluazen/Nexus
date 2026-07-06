@@ -6,7 +6,7 @@ const WorkoutSet = z.object({
   reps: z.number().int().optional(),
 }).strict();
 
-const WorkoutEntryShape = z.object({
+export const WorkoutEntryShape = z.object({
   type: z.literal("workout"),
   exercise: z.string().trim().min(1),
   exercise_key: z.string().trim().min(1).regex(
@@ -28,7 +28,7 @@ const MealItem = z.object({
   fat_g: z.number(),
 }).strict();
 
-const MealEntryShape = z.object({
+export const MealEntryShape = z.object({
   type: z.literal("meal"),
   meal_type: z.string().optional(),
   items: z.array(MealItem).min(1),
@@ -41,7 +41,7 @@ const MealEntryShape = z.object({
   notes: z.string().optional(),
 }).strict();
 
-const WeightEntryShape = z.object({
+export const WeightEntryShape = z.object({
   type: z.literal("weight"),
   weight_kg: z.number().positive(),
   notes: z.string().optional(),
@@ -52,6 +52,15 @@ export const EntryShape = z.discriminatedUnion("type", [
   MealEntryShape,
   WeightEntryShape,
 ]);
+
+export const EntryUpdateDataInput = z.union([
+  WorkoutEntryShape.omit({ type: true }),
+  MealEntryShape.omit({ type: true }),
+  WeightEntryShape.omit({ type: true }),
+]).describe(
+  "Full replacement entry data, without `type`. Use workout fields for workout entries, meal items/totals for meal entries, or weight_kg for weight entries.",
+);
+export type EntryUpdateDataInput = z.infer<typeof EntryUpdateDataInput>;
 
 // --- Model-facing INPUT schema (what nexus_log_entries publishes) -----------
 // FLAT, on purpose. The model naturally logs a meal as one object with top-level

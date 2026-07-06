@@ -33,12 +33,23 @@ const LoggedItem = z
   .passthrough();
 
 const Workout = z.object({ id: z.string(), date: z.string() }).partial().passthrough();
+const MealItem = z
+  .object({
+    name: z.string(),
+    quantity: z.union([z.number(), z.string()]),
+    calories: z.number(),
+    protein_g: z.number(),
+    carbs_g: z.number(),
+    fat_g: z.number(),
+  })
+  .partial()
+  .passthrough();
 const Meal = z
   .object({
     id: z.string(),
     date: z.string(),
     meal_type: z.string().nullish(),
-    items: z.array(z.any()),
+    items: z.array(MealItem),
     totals: Totals,
     notes: z.string(),
   })
@@ -128,12 +139,23 @@ export const GoalOutput = z
 
 // manageFriends returns different shapes per action (list vs add vs
 // accept/reject/remove). One permissive object covers them all.
+const FriendParty = z
+  .object({
+    user_id: z.string(),
+    email: z.string(),
+    display_name: z.string(),
+    friend_code: z.string().nullable(),
+    since: z.string().optional(),
+  })
+  .partial()
+  .passthrough();
+
 export const FriendsOutput = z
   .object({
     your_code: z.string().optional(),
-    friends: z.array(z.any()).optional(),
-    pending_received: z.array(z.any()).optional(),
-    pending_sent: z.array(z.any()).optional(),
+    friends: z.array(FriendParty).optional(),
+    pending_received: z.array(FriendParty).optional(),
+    pending_sent: z.array(FriendParty).optional(),
     status: z.string().optional(),
     with: z.string().optional(),
     to: z.string().optional(),

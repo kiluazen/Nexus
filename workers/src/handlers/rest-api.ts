@@ -2,6 +2,7 @@ import type { NexusEnv, NexusProps } from "../types";
 import { logEntries, getHistory, updateEntry } from "../data/entries";
 import { manageFriends } from "../data/friends";
 import { ValidationError } from "../lib/dates";
+import { UpdateInput } from "../schema/tool-inputs";
 
 interface ApiCtx {
   props: NexusProps;
@@ -52,7 +53,7 @@ async function dispatch(req: Request, env: NexusEnv, ctx: ApiCtx): Promise<Respo
       return Response.json(result);
     }
     if (req.method === "POST" && url.pathname === "/api/v1/update") {
-      const body = await readJson<{ entry_id: string; data: Record<string, unknown> }>(req);
+      const body = UpdateInput.parse(await readJson<unknown>(req));
       return Response.json(await updateEntry(env, user, body));
     }
     if (req.method === "POST" && url.pathname === "/api/v1/friends") {
