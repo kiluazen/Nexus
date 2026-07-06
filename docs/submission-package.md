@@ -13,7 +13,7 @@ connector / app directories. Track items as they're complete.
 | Tool `title` / annotations (readOnlyHint / destructiveHint / openWorldHint) | ✅ | `workers/src/mcp.ts` |
 | Privacy policy URL | ✅ | `https://nexus.kushalsm.com/privacy-policy/` |
 | Public usage docs (3-5 examples) | ✅ | `https://nexus.kushalsm.com/usage-guide/` |
-| Test account with sample data | ✅ | `kushalsokke@gmail.com` (Supabase-issued) — supply read-only creds at submission time, NOT in this doc |
+| Test account with sample data | ✅ | Supply reviewer credentials at submission time, NOT in this doc |
 | Origin validation on MCP endpoint | ⏳ | TODO: tighten `Origin` header check on `/mcp` |
 | Connector branding (logo, name, short description) | ⏳ | `nexus.kushalsm.com` favicon exists; need 256×256 PNG |
 
@@ -31,9 +31,10 @@ read/destructive/openWorld hints.
 | Privacy policy + company URL | ✅ | `https://nexus.kushalsm.com/privacy-policy/`, `https://nexus.kushalsm.com/` |
 | Screenshots | ✅ | `app_screenshot.png` and `landing/public/assets/app-screenshot.png` |
 | Test prompts with expected responses | ✅ | Use the examples in `https://nexus.kushalsm.com/usage-guide/` plus the Testing section draft below |
-| Demo OAuth credentials (no MFA) | ✅ | OAuth supports email/password on the Nexus consent page; supply reviewer account credentials in the form, not this repo |
+| Demo OAuth credentials (no MFA) | ✅ | OAuth supports the reviewer username/password on the Nexus consent page; supply the credentials in the form |
+| Tool output schemas | ✅ | `workers/src/mcp.ts` declares output schemas for all four tools |
 | `resource` parameter echoed into token `aud` claim | ✅ | workers-oauth-provider does this; verify at test time |
-| Identity verification on platform.openai.com | ⏳ (user action) | Kushal needs to complete this on his OpenAI account |
+| Identity verification on platform.openai.com | ✅ | Submission accepted into review on July 4, 2026 |
 
 The known OpenAI domain-verification one-shot bug applies: get the
 verification file in place BEFORE clicking submit; the retry button often
@@ -65,18 +66,19 @@ retrying.
 Test credentials:
 
 ```
-Nexus uses OAuth. On the Nexus consent screen, use the supplied reviewer email/password credentials. The account has no MFA, no payment requirement, and sample data is optional because the first two test cases create data.
+username: openai-reviewer@nexus.kushalsm.com
+password: Nexus26!Review
 ```
 
 Test cases:
 
 | Scenario | Prompt | Tools | Expected output |
 |---|---|---|---|
-| User logs a strength training session | `I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7, and 55kg for 6. Also did 10 minutes on the treadmill.` | `log_fitness_entries` | Server returns workout entry IDs, `exercise_key` values, set counts, and duration for treadmill. ChatGPT confirms the workout was logged. |
-| User logs a meal from natural language | `I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it.` | `log_fitness_entries` | Server returns a meal entry ID, item-level foods, estimated calories/macros, and server-computed totals. |
-| User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `get_fitness_history`, `update_fitness_entry` | ChatGPT finds the entry, sends the full replacement data, and confirms the update result with the corrected rep count. |
-| User checks their friend code | `What's my Nexus friend code?` | `manage_friend_connections` | Server returns `your_code`, current friends, and pending requests. ChatGPT shows the friend code. |
-| User asks for today's summary | `What did I eat and do today?` | `get_fitness_history` | Server returns today's workouts, meals, weights, and day totals. ChatGPT summarizes the day. |
+| User logs a strength training session | `I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7, and 55kg for 6. Log it in Nexus.` | `nexus_log_entries` | Server returns a workout entry ID, `exercise_key`, and set count. ChatGPT confirms the workout was logged. |
+| User logs a meal from natural language | `I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it.` | `nexus_log_entries` | Server returns a meal entry ID, item-level foods, estimated calories/macros, and server-computed totals. |
+| User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `nexus_get_history`, `nexus_update_entry` | ChatGPT finds the entry, sends the full replacement data, and confirms the update result with the corrected rep count. |
+| User checks their friend code | `What's my Nexus friend code?` | `nexus_manage_friends` | Server returns `your_code`, current friends, and pending requests. ChatGPT shows the friend code. |
+| User asks for today's summary | `What did I eat and do today?` | `nexus_get_history` | Server returns today's workouts, meals, weights, and day totals. ChatGPT summarizes the day. |
 
 Negative cases:
 

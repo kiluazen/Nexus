@@ -1,104 +1,107 @@
-# ChatGPT MCP App — Test Cases
+# ChatGPT Apps Review Test Cases
 
 ## Test Credentials
 
-Since the app uses Google OAuth via Supabase, you'll need to set up a demo account. Options:
-- Create a test Google account and pre-authorize it
-- Or temporarily add a bypass for a test token
+Nexus uses OAuth. Standard users sign in with an email code, but the production
+OAuth consent page also supports a preconfigured reviewer account so OpenAI can
+test without inbox access, account setup, payment, MFA, or extra coordination.
 
-**Fill in the field with:**
+Fill the Platform test-credentials field exactly like this:
+
+```text
+username: openai-reviewer@nexus.kushalsm.com
+password: Nexus26!Review
 ```
-The app uses Google OAuth sign-in. On first connection, click "Continue with Google" on the consent page. No account creation needed — signing in with any Google account automatically creates a user. No 2FA required.
-```
 
-*(If they reject this because they want username/password, you'll need to create a test Google account like `nipp.test.reviewer@gmail.com` and give them the password.)*
+On the Nexus consent page, enter the username as the email address and the
+password in the "Code or reviewer password" field, then choose "Verify &
+connect".
 
----
+## Positive Test Cases
 
-## Test Case 1
+### Test Case 1
 
-**Scenario:** Log a strength workout
+**Scenario:** Log a strength workout from natural language.
 
-**User prompt:** I just did 3 sets of bench press: 60kg for 8, 60kg for 7, and 55kg for 6 reps
+**User prompt:** I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7 reps, and 55kg for 6 reps. Log it in Nexus.
 
-**Tool triggered:** history, log
+**Tool triggered:** `nexus_log_entries`
 
-**Expected output:** The server creates a workout entry with exercise_key "bench_press" and 3 sets. Response includes the entry ID and total_sets: 3. ChatGPT confirms the logged sets.
+**Expected output:** Nexus creates a workout entry with `exercise_key:
+bench_press`, three sets, an entry ID, and `total_sets: 3`, then ChatGPT
+confirms the workout was logged.
 
----
+### Test Case 2
 
-## Test Case 2
+**Scenario:** Log a meal with estimated item macros.
 
-**Scenario:** Log a meal from a description
+**User prompt:** I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it to Nexus.
 
-**User prompt:** I had lunch — 2 chapatis, egg bhurji, and a small salad
+**Tool triggered:** `nexus_log_entries`
 
-**Tool triggered:** history, log
+**Expected output:** ChatGPT estimates item-level calories and macros before
+calling the tool. Nexus stores the meal, computes totals from the items, and
+returns an entry ID, `meal_type: lunch`, totals, and `items_count`.
 
-**Expected output:** ChatGPT estimates per-item macros (calories, protein, carbs, fat) for each food item, confirms with the user, then logs the meal. Server computes totals from the individual items and returns them. Response includes entry ID, meal_type "lunch", computed totals, and items_count.
+### Test Case 3
 
----
+**Scenario:** Fetch the user's current-day summary.
 
-## Test Case 3
+**User prompt:** What did I eat and do today? Use Nexus.
 
-**Scenario:** View today's history and daily totals
+**Tool triggered:** `nexus_get_history`
 
-**User prompt:** What did I eat and do today?
+**Expected output:** Nexus returns today's workouts, meals, weights, exercise
+keys, and `day_totals` so ChatGPT can summarize activity and nutrition.
 
-**Tool triggered:** history
+### Test Case 4
 
-**Expected output:** Server returns today's workouts and meals with day_totals showing total exercises, sets, calories, protein, carbs, fat, and meals logged. Also includes your_exercises list of all exercise keys the user has ever logged.
+**Scenario:** Correct a previously logged workout entry.
 
----
+**User prompt:** Actually that first bench press set was 9 reps, not 8. Fix it in Nexus.
 
-## Test Case 4
+**Tool triggered:** `nexus_get_history`, then `nexus_update_entry`
 
-**Scenario:** Correct a previously logged entry
+**Expected output:** ChatGPT finds the relevant entry ID, sends a full
+replacement with the corrected set data, and confirms that Nexus updated the
+entry.
 
-**User prompt:** Actually that first bench press set was 9 reps, not 8
+### Test Case 5
 
-**Tool triggered:** history, update
+**Scenario:** Show the user's Nexus friend code and connection status.
 
-**Expected output:** ChatGPT retrieves the entry by ID from history, sends the complete updated data with the corrected rep count via update. Server replaces the data and returns updated: true with the new total_sets count.
+**User prompt:** What's my Nexus friend code, and do I have any pending friend requests?
 
----
+**Tool triggered:** `nexus_manage_friends`
 
-## Test Case 5
+**Expected output:** Nexus returns the user's friend code plus current friends,
+pending received requests, and pending sent requests.
 
-**Scenario:** Log a cardio workout
+## Negative Test Cases
 
-**User prompt:** I just did 30 minutes of jiu jitsu, worked on passing guard to side control
+### Negative Test Case 1
 
-**Tool triggered:** history, log
+**Scenario:** General workout education.
 
-**Expected output:** Server creates a workout entry with exercise_key "jiu_jitsu", duration_min: 30, and the notes about guard passing. Response includes the entry ID and duration_min.
+**User prompt:** What is hypertrophy and how does progressive overload work?
 
----
+**Expected behavior:** Nexus should not be invoked because the request is for
+general information, not logging or retrieving supported Nexus data.
 
-## Negative Test Case 1
+### Negative Test Case 2
 
-**Scenario:** User asks for sleep or mood tracking
+**Scenario:** Future workout planning.
 
-**User prompt:** I slept 7 hours last night and I'm feeling stressed today
+**User prompt:** Build me a four-day push-pull-legs workout plan for next month.
 
-**Why it shouldn't trigger:** The app only handles workouts and meals. Sleep and mood are outside its scope. ChatGPT should respond conversationally without calling any Nipp tools.
+**Expected behavior:** Nexus should not be invoked because it records completed
+activity and history, not speculative plans.
 
----
+### Negative Test Case 3
 
-## Negative Test Case 2
+**Scenario:** Unsupported wellness tracking.
 
-**Scenario:** User asks for a workout plan or coaching advice
+**User prompt:** I slept 7 hours last night and felt stressed today. Track that for me.
 
-**User prompt:** Can you create a 4-day push/pull/legs workout plan for me?
-
-**Why it shouldn't trigger:** The app logs what the user actually did — it doesn't generate workout plans. ChatGPT can answer this from its own knowledge without calling any Nipp tools.
-
----
-
-## Negative Test Case 3
-
-**Scenario:** User asks a general nutrition question
-
-**User prompt:** How much protein should I eat per day to build muscle?
-
-**Why it shouldn't trigger:** This is a general knowledge question, not a request to log or retrieve data. ChatGPT should answer from its own knowledge without calling any Nipp tools.
+**Expected behavior:** Nexus should not be invoked because sleep, mood, and
+stress tracking are outside the supported Nexus workflows.

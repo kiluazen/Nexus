@@ -1,0 +1,128 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Nexus",
+    "subtitle": "Log workouts and meals",
+    "description": "Nexus lets users log workouts, meals, and body weight from ChatGPT, retrieve their fitness history, correct existing entries, and manage Nexus friends who can view shared progress after an accepted connection.",
+    "category": "LIFESTYLE"
+  },
+  "tools": {
+    "nexus_log_entries": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates new workout, meal, or body-weight entries for the authenticated Nexus user.",
+        "open_world_justification": "Writes only to Nexus-owned storage for the authenticated user and does not publish or send data to external systems.",
+        "destructive_justification": "Only appends new entries and does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "nexus_get_history": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves the user's own logged entries, totals, exercise keys, pending request count, or an accepted friend's history without modifying entries.",
+        "open_world_justification": "Reads only private Nexus data available to the authenticated user and does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or otherwise perform irreversible actions."
+      }
+    },
+    "nexus_update_entry": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Replaces the data for one existing entry owned by the authenticated Nexus user.",
+        "open_world_justification": "Modifies only a private Nexus entry and does not publish or send data to external systems.",
+        "destructive_justification": "Fully overwrites the prior entry data, so the previous version cannot be recovered from this tool."
+      }
+    },
+    "nexus_manage_friends": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Can create friend requests, accept requests, reject requests, remove friends, and lazily assign the user's friend code.",
+        "open_world_justification": "Changes only Nexus friendship records between Nexus accounts and does not contact third-party messaging or publishing services.",
+        "destructive_justification": "Rejecting or removing a friendship deletes the friendship record and revokes the other user's friend-history access."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Log a strength workout from natural language.",
+      "user_prompt": "I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7 reps, and 55kg for 6 reps. Log it in Nexus.",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_log_entries",
+      "expected_output": "Creates a workout entry with exercise_key bench_press, three sets, an entry id, and total_sets of 3, then confirms the workout was logged.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Log a meal with model-estimated item macros.",
+      "user_prompt": "I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it to Nexus.",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_log_entries",
+      "expected_output": "Creates a meal entry with item-level calorie and macro estimates, server-computed totals, an entry id, meal_type lunch, and items_count.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Fetch the user's current-day summary.",
+      "user_prompt": "What did I eat and do today? Use Nexus.",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_get_history",
+      "expected_output": "Returns today's workouts, meals, weights, exercise keys, and day_totals so ChatGPT can summarize activity and nutrition.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Correct a previously logged workout entry.",
+      "user_prompt": "Actually that first bench press set was 9 reps, not 8. Fix it in Nexus.",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_get_history, nexus_update_entry",
+      "expected_output": "Finds the relevant entry id, sends a full replacement with the corrected set data, and confirms the entry was updated.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Show the user's Nexus friend code and connection status.",
+      "user_prompt": "What's my Nexus friend code, and do I have any pending friend requests?",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_manage_friends",
+      "expected_output": "Returns the user's friend code plus current friends, pending received requests, and pending sent requests.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for general workout education.",
+      "user_prompt": "What is hypertrophy and how does progressive overload work?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because the user is asking for general fitness information, not logging or retrieving Nexus data.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for future workout planning.",
+      "user_prompt": "Build me a four-day push-pull-legs workout plan for next month.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because Nexus records completed activity and history, not speculative plans.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for unsupported wellness tracking.",
+      "user_prompt": "I slept 7 hours last night and felt stressed today. Track that for me.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because sleep, mood, and stress tracking are outside the supported Nexus workflows.",
+      "expected_output_url": null
+    }
+  ]
+}

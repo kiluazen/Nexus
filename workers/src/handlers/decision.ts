@@ -1,5 +1,10 @@
 import type { NexusEnv } from "../types";
-import { sendLoginCode, verifyLoginCode, displayNameFromEmail } from "../instant";
+import {
+  createReviewerLogin,
+  displayNameFromEmail,
+  sendLoginCode,
+  verifyLoginCode,
+} from "../instant";
 import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
 import { loadParsedAuthRequest } from "./authorize";
 
@@ -67,31 +72,49 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
     return Response.json({ sent: true });
   }
 
-  // approve: verifying the magic code IS the sign-in.
+  // approve: a configured reviewer password bypasses email delivery; otherwise
+  // verifying the magic code IS the sign-in.
   const code = (body.code ?? "").trim();
-  if (!/^\d{6}$/.test(code)) {
-    return Response.json({ error: "Enter the 6-digit code from your email." }, { status: 400 });
-  }
-  if (await isCodeLocked(env, email)) {
-    return Response.json(
-      { error: "Too many wrong codes. Request a new one and try again." },
-      { status: 429 },
-    );
-  }
+  const reviewerEmail = env.REVIEWER_LOGIN_EMAIL?.trim().toLowerCase();
+  const reviewerPassword = env.REVIEWER_LOGIN_PASSWORD?.trim();
+  const isReviewerLogin =
+    !!reviewerEmail && !!reviewerPassword && email === reviewerEmail && code === reviewerPassword;
 
   let login;
-  try {
-    login = await verifyLoginCode(env, email, code);
-  } catch (e) {
-    console.error("checkMagicCode failed", e);
-    await recordCodeFailure(env, email);
-    return Response.json(
-      { error: "That code didn't match. Check your email and try again." },
-      { status: 401 },
-    );
-  }
+  let signedInVia: "reviewer_password" | "instantdb_magic_code";
+  if (isReviewerLogin) {
+    try {
+      login = await createReviewerLogin(env, email);
+      signedInVia = "reviewer_password";
+    } catch (e) {
+      console.error("createReviewerLogin failed", e);
+      return Response.json({ error: "Could not sign in reviewer account." }, { status: 502 });
+    }
+  } else {
+    if (!/^\d{6}$/.test(code)) {
+      return Response.json({ error: "Enter the 6-digit code from your email." }, { status: 400 });
+    }
+    if (await isCodeLocked(env, email)) {
+      return Response.json(
+        { error: "Too many wrong codes. Request a new one and try again." },
+        { status: 429 },
+      );
+    }
 
-  await clearCodeFailures(env, email);
+    try {
+      login = await verifyLoginCode(env, email, code);
+      signedInVia = "instantdb_magic_code";
+    } catch (e) {
+      console.error("checkMagicCode failed", e);
+      await recordCodeFailure(env, email);
+      return Response.json(
+        { error: "That code didn't match. Check your email and try again." },
+        { status: 401 },
+      );
+    }
+
+    await clearCodeFailures(env, email);
+  }
   await env.NEXUS_CACHE.delete(`consent:${body.nonce}`);
 
   const props = {
@@ -106,7 +129,7 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
     scope: parsed.scope,
     props,
     metadata: {
-      signed_in_via: "instantdb_magic_code",
+      signed_in_via: signedInVia,
       issued_at: Date.now(),
     },
   });

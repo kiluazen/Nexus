@@ -64,6 +64,14 @@ export async function verifyLoginCode(
   return { userId: user.id, email: user.email ?? email, refreshToken: user.refresh_token };
 }
 
+/** Mint a login for the configured review account without sending an email code. */
+export async function createReviewerLogin(env: NexusEnv, email: string): Promise<VerifiedLogin> {
+  const db = adminDb(env);
+  const refreshToken = await db.auth.createToken({ email });
+  const user = await db.auth.verifyToken(refreshToken);
+  return { userId: user.id, email: user.email ?? email, refreshToken };
+}
+
 /** Resolve a stored InstantDB refresh token back to a user (CLI bearer path). */
 export async function userFromRefreshToken(env: NexusEnv, token: string) {
   try {

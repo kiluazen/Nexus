@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "nexus",
+  "displayName": "Nexus",
+  "version": "0.1.0",
+  "description": "Track workouts, meals, and body weight from your agent. Talk naturally; Nexus logs it.",
+  "author": { "name": "Kushal SM" },
+  "homepage": "https://nexus.kushalsm.com",
+  "repository": "https://github.com/kiluazen/Nexus",
+  "license": "MIT",
+  "keywords": ["fitness", "nutrition", "workout", "tracker", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": {
+    "nexus": {
+      "type": "http",
+      "url": "https://mcp.nexus.kushalsm.com/mcp"
+    }
+  }
+}

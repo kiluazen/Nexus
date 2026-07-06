@@ -1,6 +1,6 @@
 # Nexus — Privacy Policy
 
-Last updated: 2026-05-25
+Last updated: 2026-07-04
 
 Nexus is a fitness journal: you tell it what you ate, what you lifted, what you
 weigh; it stores those entries against your account so you (and, optionally,
@@ -11,10 +11,10 @@ us to delete it.
 
 ## What we collect
 
-When you authenticate, we receive your Supabase-issued user identity:
+When you authenticate, we receive your InstantDB-issued user identity:
 - A stable user ID (UUID).
 - The email you signed in with.
-- The display name on your Supabase profile.
+- The display name derived from your email address.
 
 When you use the product, we store the entries you log:
 - Workouts: exercise name, sets/reps/weight, duration, distance, any notes.
@@ -29,12 +29,12 @@ We do not run analytics.
 
 ## Where it's stored
 
-All persistent data lives in a Supabase Postgres instance under our control,
-hosted in AWS us-east-1. Connection state and short-lived OAuth tokens live
-in Cloudflare Workers KV (encrypted at rest, edge-replicated).
+Persistent account, workout, meal, weight, and friendship data lives in
+InstantDB. Connection state and short-lived OAuth tokens live in Cloudflare
+Workers KV (encrypted at rest, edge-replicated).
 
 We do not sell your data, surface it to advertisers, or feed it to model
-training. Our infrastructure providers (Supabase, Cloudflare, Anthropic,
+training. Our infrastructure providers (InstantDB, Cloudflare, Anthropic,
 OpenAI) handle data only as required to operate the service.
 
 ## Who sees your data
@@ -44,7 +44,7 @@ OpenAI) handle data only as required to operate the service.
   whichever of the four tools you grant — typically all four — and reads
   your entries during those tool calls.
 - Friends you've explicitly accepted on Nexus see your entries when they
-  call `get_fitness_history(friend_id=<you>)`.
+  call `nexus_get_history(friend_id=<you>)`.
 - We (the operators of Nexus) can read your data when debugging or
   responding to your support requests. We do not browse it otherwise.
 
@@ -54,9 +54,11 @@ or your AI agent to see.
 
 ## Authentication
 
-We use Supabase Auth as the identity provider — Google OAuth or email +
-password. We never see your Google credentials. We never see your password
-in cleartext; Supabase salts and hashes it.
+We use InstantDB email-code authentication as the standard identity provider.
+For app review, Nexus can also accept a preconfigured reviewer username and
+password on the OAuth consent page so reviewers can connect without inbox
+access or MFA. The reviewer password is stored as a Cloudflare Worker secret,
+not in the repository or public site.
 
 When an MCP client (Claude, ChatGPT, Codex, the Nexus CLI) connects, our
 OAuth 2.1 server issues a scoped access token bound to your user. That

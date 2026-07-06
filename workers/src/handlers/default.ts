@@ -23,7 +23,7 @@ export default {
 
     // OpenAI domain verification token — apex-served plain text.
     if (path === "/.well-known/openai-apps-challenge") {
-      return new Response("p7WC1Y8Ev8u7vcTTDqzMy7RAZo5YtbfLifniIRJKXe8\n", {
+      return new Response("ihOAYeRCh3uL2rZ_X5yOgScrfhIcpyqVBTr7BuTJ5d4\n", {
         headers: { "content-type": "text/plain" },
       });
     }
