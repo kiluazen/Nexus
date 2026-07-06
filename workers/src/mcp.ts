@@ -1,21 +1,31 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import type { NexusEnv, NexusProps } from "./types";
 import { LogInput, HistoryInput, UpdateInput, FriendsInput } from "./schema/tool-inputs";
+import { LogOutput, HistoryOutput, UpdateOutput, FriendsOutput } from "./schema/tool-outputs";
 import { logEntries, getHistory, updateEntry, type UserCtx } from "./data/entries";
 import { manageFriends } from "./data/friends";
 import { mintWidgetToken } from "./instant";
 import { WIDGET_URI, widgetHtml } from "./widget/today-html";
 import { ValidationError, todayUtc } from "./lib/dates";
+// The @instantdb/core UMD bundle, vendored and loaded as a string (wrangler
+// Text rule). We inline it into the widget so there's no external <script src>
+// in the render path — the documented, reliable pattern.
+import INSTANT_BUNDLE from "../vendor/instantdb-core.umd.txt";
 
-// CSP for the widget iframe. connect_domains covers fetch + websocket for the
-// live InstantDB session; unpkg serves the @instantdb/core UMD bundle. Both
-// https and wss forms are declared — sandbox handling of wss is inconsistent,
-// and the widget degrades to its static paint if the socket is blocked.
+// The full widget document = app fragment + the inlined InstantDB library.
+// Built by concatenation (not template interpolation) because the minified
+// bundle contains backticks and ${ that would break a template literal.
+function fullWidgetHtml(): string {
+  return widgetHtml() + "\n<script>" + INSTANT_BUNDLE + "</script>";
+}
+
+// CSP for the widget iframe. connect_domains covers fetch + websocket to
+// InstantDB for the live session (both https and wss are declared because
+// sandbox handling of wss is inconsistent). No resource_domains needed: the
+// library is inlined, not fetched from a CDN.
 const WIDGET_CSP = {
   connect_domains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
-  resource_domains: ["https://unpkg.com"],
 };
 
 // Shared so the resource registration and the read callback agree — the MCP
@@ -23,72 +33,16 @@ const WIDGET_CSP = {
 const WIDGET_META = {
   "openai/widgetCSP": WIDGET_CSP,
   "openai/widgetPrefersBorder": true,
+  // Required for directory submission: pins the origin the widget renders from.
+  "openai/widgetDomain": "https://mcp.nexus.kushalsm.com",
   "openai/widgetDescription":
     "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
 };
 
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
-Logging rules: call nexus_log_entries only when the user describes workout, meal, or body-weight data they already did or consumed and wants it saved. Estimate meal calories and macros before calling; Nexus stores the values you send and computes meal totals from item values. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (for example, use "bench_press" consistently).
-Reading rules: use nexus_get_history for questions about the user's logged workouts, meals, calories, macros, weight, progress, or accepted friends' shared history. Check history before updating an entry and before logging when a duplicate seems likely.
-Boundary rules: do not call Nexus for general fitness education, workout planning, nutrition advice, medical questions, sleep, mood, symptoms, or future intentions unless the user is also asking to log or retrieve supported Nexus data. Nexus stores and returns private tracking data; ChatGPT handles coaching, analysis, and conversation.`;
-
-const LooseRecord = z.record(z.string(), z.unknown());
-const EntrySummaryOutput = z.object({
-  id: z.string(),
-  entry_type: z.enum(["workout", "meal", "weight"]),
-}).passthrough();
-
-const PeriodOutput = z.object({
-  from: z.string(),
-  to: z.string(),
-});
-
-const DayTotalsOutput = z.object({
-  exercises: z.number(),
-  total_sets: z.number(),
-  calories: z.number(),
-  protein_g: z.number(),
-  carbs_g: z.number(),
-  fat_g: z.number(),
-  meals_logged: z.number(),
-});
-
-const HistoryOutput = z.object({
-  period: PeriodOutput,
-  workouts: z.array(LooseRecord),
-  meals: z.array(LooseRecord),
-  weights: z.array(LooseRecord),
-  your_exercises: z.array(z.string()).optional(),
-  pending_friend_requests: z.number().optional(),
-  day_totals: DayTotalsOutput.optional(),
-});
-
-const LogOutput = HistoryOutput.extend({
-  logged: z.array(EntrySummaryOutput),
-});
-
-const UpdateOutput = z.object({
-  id: z.string(),
-  entry_type: z.enum(["workout", "meal", "weight"]),
-  updated: z.literal(true),
-}).passthrough();
-
-const FriendPartyOutput = z.object({
-  user_id: z.string(),
-  email: z.string(),
-  display_name: z.string(),
-  friend_code: z.string().nullable(),
-}).passthrough();
-
-const FriendsOutput = z.union([
-  z.object({
-    your_code: z.string(),
-    friends: z.array(FriendPartyOutput),
-    pending_received: z.array(FriendPartyOutput),
-    pending_sent: z.array(FriendPartyOutput),
-  }),
-  z.object({ status: z.string() }).passthrough(),
-]);
+Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press", never "bench").
+Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely.
+Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
 
 function errorResult(message: string) {
   return {
@@ -155,7 +109,10 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
     };
   }
 
-  private textResult(payload: Record<string, unknown>) {
+  // Data-only result: the model gets structured data to answer from, but NO
+  // widget renders. Used for reads so an informational question ("what's my
+  // total?") returns a text answer instead of the editable card.
+  private dataResult(payload: Record<string, unknown>) {
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload) }],
       structuredContent: payload,
@@ -177,7 +134,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           {
             uri: WIDGET_URI,
             mimeType: "text/html+skybridge",
-            text: widgetHtml(),
+            text: fullWidgetHtml(),
             _meta: WIDGET_META,
           },
         ],
@@ -189,9 +146,13 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Log to Nexus",
         description:
-          "Log workout, meal, or body-weight entries the authenticated user already did or consumed. For meals, ChatGPT must provide item-level calorie and macro estimates; Nexus stores those values and computes totals. Do not use for advice, planning, future intentions, sleep, mood, symptoms, or general nutrition questions.",
+          "Use this when the user mentions any workout, exercise, gym session, sport, run, or physical activity they did, any meal, food, snack, or drink they consumed, or a body-weight reading. Log it immediately without asking for confirmation; estimate calories and macros yourself first. " +
+          "Each entry is a flat object keyed by `type`. A meal is: {\"type\":\"meal\",\"name\":\"Cappuccino\",\"calories\":120,\"protein_g\":6,\"carbs_g\":10,\"fat_g\":6}. " +
+          "A workout is: {\"type\":\"workout\",\"exercise\":\"Bench Press\",\"exercise_key\":\"bench_press\",\"sets\":[{\"weight_kg\":60,\"reps\":8}]}. " +
+          "A weight is: {\"type\":\"weight\",\"weight_kg\":74.5}. " +
+          "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,
-        outputSchema: LogOutput,
+        outputSchema: LogOutput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         _meta: {
           "openai/outputTemplate": WIDGET_URI,
@@ -219,24 +180,21 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Get Nexus history",
         description:
-          "Retrieve the authenticated user's logged workouts, meals, body-weight entries, day totals, exercise keys, pending friend request count, or an accepted friend's shared history. Use before updates or possible duplicate logs. Do not use for general nutrition knowledge, workout planning, medical questions, or unsupported wellness tracking.",
+          "Use this when the user asks what they ate, what workouts they did, their weight trend, calories, macros, protein, progress on an exercise, or wants a summary of any past day or date range. Also call it before logging when a duplicate entry seems possible. Do not use for general nutrition knowledge or workout advice.",
         inputSchema: HistoryInput.shape,
-        outputSchema: HistoryOutput,
+        outputSchema: HistoryOutput.shape,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        // No outputTemplate on purpose: reads answer in text, they don't render
+        // the editable card. The card is for logging/correcting, not for
+        // "what's my total?" questions.
         _meta: {
-          "openai/outputTemplate": WIDGET_URI,
           "openai/toolInvocation/invoking": "Checking your Nexus log…",
           "openai/toolInvocation/invoked": "Fetched from Nexus",
         },
       },
       async (args) => {
-        // The live subscription can only reproduce the viewer's own,
-        // unfiltered day. Friend or type-filtered views stay static so the
-        // live socket never overwrites the card with the wrong data.
-        const live = !args.friend_id && !args.type;
-        if (live) void this.widgetToken(); // warm the token alongside the read
         const r = await safe(() => getHistory(this.env, this.user(), args));
-        return r.ok ? this.widgetResult(r.value, { live }) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
 
@@ -245,14 +203,14 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Update a Nexus entry",
         description:
-          "Replace one existing workout, meal, or body-weight entry owned by the authenticated user after the user asks to correct logged data. Requires the entry id from nexus_get_history or a prior log result. The submitted data fully replaces the previous entry data.",
+          "Use this when the user corrects or amends something already logged: fixing reps or weight, adding a set, changing meal items or macros, or adjusting a body-weight reading. Requires the entry id from nexus_get_history or a prior log result. The new data fully replaces the old entry.",
         inputSchema: UpdateInput.shape,
-        outputSchema: UpdateOutput,
+        outputSchema: UpdateOutput.shape,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => updateEntry(this.env, this.user(), args));
-        return r.ok ? this.textResult(r.value) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
 
@@ -261,16 +219,16 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Manage Nexus friends",
         description:
-          "List the user's Nexus friend code and friend requests, send a friend request by Nexus code, accept or reject a pending request by email, or remove a friend by email. Accepted friends can view each other's shared Nexus history through nexus_get_history with friend_id.",
+          "Use this when the user wants to see their Nexus friends or friend code, add a friend by code (NEXUS-XXXX), or accept, reject, or remove a friend by email. Friends can view each other's fitness history via nexus_get_history with friend_id.",
         inputSchema: FriendsInput.shape,
-        outputSchema: FriendsOutput,
+        outputSchema: FriendsOutput.shape,
         // Not read-only (add/accept/remove mutate) and not open-world: it only
         // touches this app's own data, never a third-party service.
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, this.user(), args));
-        return r.ok ? this.textResult(r.value) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
   }

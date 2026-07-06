@@ -1,6 +1,7 @@
 import type { NexusEnv } from "../types";
 import { handleAuthorize } from "./authorize";
 import { handleDecision } from "./decision";
+import { handleGoogleStart, handleGoogleCallback } from "../auth/google";
 import { handleProtectedResource } from "./protected-resource";
 import { sendLoginCode, verifyLoginCode, revokeToken } from "../instant";
 import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
@@ -23,7 +24,7 @@ export default {
 
     // OpenAI domain verification token — apex-served plain text.
     if (path === "/.well-known/openai-apps-challenge") {
-      return new Response("ihOAYeRCh3uL2rZ_X5yOgScrfhIcpyqVBTr7BuTJ5d4\n", {
+      return new Response("p7WC1Y8Ev8u7vcTTDqzMy7RAZo5YtbfLifniIRJKXe8\n", {
         headers: { "content-type": "text/plain" },
       });
     }
@@ -34,6 +35,13 @@ export default {
     }
     if (path === "/oauth/decision") {
       return handleDecision(req, env);
+    }
+    // "Sign in with Google" from the consent page: start -> Google -> callback.
+    if (path === "/auth/google/start") {
+      return handleGoogleStart(req, env);
+    }
+    if (path === "/auth/google/callback") {
+      return handleGoogleCallback(req, env);
     }
 
     // Unauthenticated CLI/agent login: email magic code in, InstantDB

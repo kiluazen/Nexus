@@ -3,7 +3,8 @@ import { adminDb, userDb, rawQuery, id as newId } from "../instant";
 import {
   computeMealTotals,
   parseEntry,
-  type Entry,
+  parseEntryInput,
+  entryInputToStorage,
   type MealTotals,
 } from "../schema/entry-shapes";
 import { ValidationError, parseDate, todayUtc, addDaysUtc } from "../lib/dates";
@@ -52,69 +53,39 @@ export async function logEntries(
   const logged: Record<string, unknown>[] = [];
 
   for (const raw of args.entries) {
-    const entry = parseEntry({ ...((raw as object) ?? {}) });
+    // Validate against the flat, published input schema, then map to storage.
+    const entry = parseEntryInput({ ...((raw as object) ?? {}) });
+    const s = entryInputToStorage(entry);
     const entryId = newId();
 
-    if (entry.type === "workout") {
-      const { type: _t, ...data } = entry;
-      const exerciseKey = data.exercise_key.trim();
-      chunks.push(
-        db.tx.entries[entryId]!
-          .update({
-            type: "workout",
-            entry_date: dateMs,
-            exercise_key: exerciseKey,
-            data,
-            created_at: now,
-            updated_at: now,
-          })
-          .link({ owner: user.userId }),
-      );
-      const out: Record<string, unknown> = {
-        id: entryId,
-        entry_type: "workout",
-        exercise_key: exerciseKey,
-      };
-      if (Array.isArray(data.sets)) out.total_sets = data.sets.length;
-      if (typeof data.duration_min === "number") out.duration_min = data.duration_min;
+    chunks.push(
+      db.tx.entries[entryId]!
+        .update({
+          type: s.type,
+          entry_date: dateMs,
+          exercise_key: s.exercise_key ?? undefined,
+          meal_type: s.meal_type ?? undefined,
+          data: s.data,
+          created_at: now,
+          updated_at: now,
+        })
+        .link({ owner: user.userId }),
+    );
+
+    if (s.type === "workout") {
+      const out: Record<string, unknown> = { id: entryId, entry_type: "workout", exercise_key: s.exercise_key };
+      if (Array.isArray(s.data.sets)) out.total_sets = (s.data.sets as unknown[]).length;
+      if (typeof s.data.duration_min === "number") out.duration_min = s.data.duration_min;
       logged.push(out);
-    } else if (entry.type === "meal") {
-      const { type: _t, ...rest } = entry;
-      const totals = computeMealTotals(rest.items);
-      const data = { ...rest, totals };
-      chunks.push(
-        db.tx.entries[entryId]!
-          .update({
-            type: "meal",
-            entry_date: dateMs,
-            meal_type: data.meal_type,
-            data,
-            created_at: now,
-            updated_at: now,
-          })
-          .link({ owner: user.userId }),
-      );
+    } else if (s.type === "meal") {
       logged.push({
         id: entryId,
         entry_type: "meal",
-        meal_type: data.meal_type ?? null,
-        totals,
-        items_count: data.items.length,
+        meal_type: s.meal_type,
+        totals: s.data.totals,
       });
     } else {
-      const { type: _t, ...data } = entry;
-      chunks.push(
-        db.tx.entries[entryId]!
-          .update({
-            type: "weight",
-            entry_date: dateMs,
-            data,
-            created_at: now,
-            updated_at: now,
-          })
-          .link({ owner: user.userId }),
-      );
-      logged.push({ id: entryId, entry_type: "weight", weight_kg: data.weight_kg });
+      logged.push({ id: entryId, entry_type: "weight", weight_kg: s.data.weight_kg });
     }
   }
 

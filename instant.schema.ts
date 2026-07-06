@@ -14,6 +14,17 @@ const _schema = i.schema({
       created_at: i.date().indexed().optional(),
     }),
 
+    // Email+password credential, deliberately kept OUT of $users: a signed-in
+    // client (the ChatGPT widget, the CLI) holds a real InstantDB token for its
+    // own $users row, and $users is client-readable — so a password hash there
+    // would be reachable by that token and crackable offline. This namespace is
+    // denied to every client in instant.perms.ts; only the Worker's admin
+    // client (which bypasses perms) ever reads or writes it.
+    passwordCredentials: i.entity({
+      hash:       i.string(),                       // pbkdf2$iters$salt$hash
+      updated_at: i.date().indexed().optional(),
+    }),
+
     // One workout / meal / body-weight row. Scalar fields are indexed for
     // history queries; the shape-specific payload (sets, items+macros, weight)
     // lives in `data` as JSON so we keep the old flexible entry contract.
@@ -40,6 +51,11 @@ const _schema = i.schema({
     entryOwner: {
       forward: { on: 'entries', has: 'one', label: 'owner' },
       reverse: { on: '$users', has: 'many', label: 'entries' },
+    },
+    // passwordCredentials.user (one) <-> $users.passwordCredential (one)
+    userPassword: {
+      forward: { on: 'passwordCredentials', has: 'one', label: 'user' },
+      reverse: { on: '$users', has: 'one', label: 'passwordCredential' },
     },
     // friendships.requester (one) <-> $users.sentFriendships (many)
     friendshipRequester: {

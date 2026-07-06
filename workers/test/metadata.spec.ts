@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { handleProtectedResource } from "../src/handlers/protected-resource";
-import { computeMealTotals, parseEntry } from "../src/schema/entry-shapes";
+import { computeMealTotals, parseEntry, parseEntryInput, entryInputToStorage } from "../src/schema/entry-shapes";
 import { parseDate, ValidationError } from "../src/lib/dates";
+import { widgetHtml } from "../src/widget/today-html";
+import { consentHtml } from "../src/auth/consent-html";
+import { hashPassword, verifyPassword } from "../src/auth/password";
 import type { NexusEnv } from "../src/types";
 
 const env = { BASE_URL: "https://mcp.nexus.kushalsm.com" } as NexusEnv;
@@ -31,6 +34,53 @@ describe("submission metadata", () => {
       exercise_key: "Bench Press",
       sets: [{ weight_kg: 60, reps: 8 }],
     })).toThrow(/exercise_key/);
+  });
+
+  it("widget inline script parses (tsc can't see inside the template string)", () => {
+    const html = widgetHtml();
+    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+    expect(script && script.length).toBeTruthy();
+    // new Function only PARSES the body; a syntax error (e.g. an unterminated
+    // string) throws here, undefined runtime globals (window, instant) do not.
+    expect(() => new Function(script as string)).not.toThrow();
+  });
+
+  it("consent page inline script parses, with and without the Google button", () => {
+    for (const googleEnabled of [true, false]) {
+      const html = consentHtml({ nonce: "n-1", clientName: "ChatGPT", googleEnabled });
+      const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+      expect(script && script.length).toBeTruthy();
+      expect(() => new Function(script as string)).not.toThrow();
+      // The Google button only exists when configured.
+      expect(html.includes('id="google"')).toBe(googleEnabled);
+    }
+  });
+
+  it("hashes a password and verifies it (PBKDF2 round-trip, wrong password fails)", async () => {
+    const hash = await hashPassword("correct horse battery");
+    expect(hash.startsWith("pbkdf2$")).toBe(true);
+    expect(await verifyPassword("correct horse battery", hash)).toBe(true);
+    expect(await verifyPassword("wrong password", hash)).toBe(false);
+    // A second hash of the same password uses a fresh salt, so it differs.
+    const hash2 = await hashPassword("correct horse battery");
+    expect(hash2).not.toBe(hash);
+  });
+
+  it("accepts a flat meal, defaults missing macros, and maps to storage", () => {
+    // The shape the model naturally sends — flat, no nested items[].
+    const entry = parseEntryInput({ type: "meal", name: "Cappuccino", calories: 120, protein_g: 6 });
+    const s = entryInputToStorage(entry);
+    expect(s.type).toBe("meal");
+    expect(s.data.totals).toEqual({ calories: 120, protein_g: 6, carbs_g: 0, fat_g: 0 });
+    expect((s.data.items as { name: string; quantity: number }[])[0]).toMatchObject({ name: "Cappuccino", quantity: 1 });
+  });
+
+  it("strips unknown keys but still rejects a wrong discriminator", () => {
+    // Extra keys the model might add are ignored, not rejected.
+    const s = entryInputToStorage(parseEntryInput({ type: "meal", name: "Kiwi", calories: 42, description: "green", quantity: 1 }));
+    expect(s.data.totals).toMatchObject({ calories: 42 });
+    // But a bad discriminator is a clear error (no silent fallback).
+    expect(() => parseEntryInput({ kind: "meal", name: "x", calories: 1 })).toThrow();
   });
 
   it("rejects calendar dates that V8 would silently roll over", () => {

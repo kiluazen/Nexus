@@ -7,6 +7,13 @@ import type { NexusEnv } from "./types";
 
 export { NexusMcpAgent };
 
+// The OAuthProvider config is built at module load, before env is available,
+// so the canonical host comes from a build-time define (`__BASE_URL__`, set
+// per-environment in wrangler.jsonc). Prod and staging each advertise their
+// own resource identifier. Fallback keeps tests and bare runs working.
+declare const __BASE_URL__: string | undefined;
+const BASE = typeof __BASE_URL__ !== "undefined" ? __BASE_URL__ : "https://mcp.nexus.kushalsm.com";
+
 // Base URL is read at request time from env.BASE_URL inside handlers; the lib
 // only needs path-relative endpoint config.
 export default new OAuthProvider({
@@ -30,8 +37,8 @@ export default new OAuthProvider({
     // Canonical resource identifier, advertised to all clients regardless of
     // which protected-resource URL variant they fetch. See
     // docs/mcp-path-trailing-slash.md — must remain the no-slash form.
-    resource: "https://mcp.nexus.kushalsm.com/mcp",
-    authorization_servers: ["https://mcp.nexus.kushalsm.com"],
+    resource: `${BASE}/mcp`,
+    authorization_servers: [BASE],
     scopes_supported: ["openid", "profile", "email"],
     bearer_methods_supported: ["header"],
     resource_name: "Nexus",

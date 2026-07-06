@@ -16,6 +16,12 @@ const rules = {
     },
   },
 
+  // Password hashes live here, never on the client-readable $users row. Deny
+  // every client operation ($default: false) so no user token can read another
+  // user's — or even its own — hash. The Worker's admin client bypasses perms
+  // and is the only thing that ever touches this namespace.
+  passwordCredentials: { allow: { $default: 'false' } },
+
   entries: {
     bind: ['isOwner', "auth.id != null && auth.id in data.ref('owner.id')"],
     allow: {

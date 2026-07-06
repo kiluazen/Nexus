@@ -1,10 +1,15 @@
 import { z } from "zod";
+import { EntryInput } from "./entry-shapes";
 
 const LOCAL_DATE_DESC =
   "The user's local date (YYYY-MM-DD). Always pass this from the user's timezone; if omitted the server falls back to the UTC date, which can land an evening entry on the wrong day.";
 
 export const LogInput = z.object({
-  entries: z.array(z.record(z.string(), z.unknown())).min(1),
+  // Flat, discriminated by `type`. Publishing the real shape (instead of a bare
+  // object) is what lets the model get it right in one call.
+  entries: z.array(EntryInput).min(1).describe(
+    "One object per thing to log. Each has a `type` of meal, workout, or weight. Meals are flat: { type: 'meal', name, calories, protein_g?, carbs_g?, fat_g?, meal_type? }.",
+  ),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(LOCAL_DATE_DESC).optional(),
 });
 

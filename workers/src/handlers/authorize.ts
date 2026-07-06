@@ -54,8 +54,10 @@ export async function handleAuthorize(req: Request, env: NexusEnv): Promise<Resp
   const stash = await env.NEXUS_CACHE.get(`consent:${nonce}`);
   if (!stash) return expiredHtml();
   const parsed = JSON.parse(stash) as AuthRequest & { _client?: string };
+  // Show the Google button only when the client is configured (secrets set).
+  const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   return new Response(
-    consentHtml({ nonce, clientName: parsed._client ?? "an application" }),
+    consentHtml({ nonce, clientName: parsed._client ?? "an application", googleEnabled }),
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );
 }
