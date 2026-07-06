@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { handleProtectedResource } from "../src/handlers/protected-resource";
 import { computeMealTotals, parseEntry, parseEntryInput, entryInputToStorage } from "../src/schema/entry-shapes";
 import { parseDate, ValidationError } from "../src/lib/dates";
+import { DEFAULT_GOAL, mergeGoalUpdate } from "../src/schema/goal-shapes";
 import { widgetHtml } from "../src/widget/today-html";
 import { consentHtml } from "../src/auth/consent-html";
 import { hashPassword, verifyPassword } from "../src/auth/password";
@@ -89,5 +90,31 @@ describe("submission metadata", () => {
     expect(() => parseDate("2026-02-30")).toThrow(ValidationError);
     expect(() => parseDate("2026-04-31")).toThrow(ValidationError);
     expect(() => parseDate("2026-02-29")).toThrow(ValidationError);
+  });
+
+  it("a first-ever goal update fills in defaults for anything unmentioned", () => {
+    // No current row (user's never set a goal) — "just bump protein" still
+    // has to produce a complete row, not a patch with calories missing.
+    expect(mergeGoalUpdate(null, { protein_g: 150 })).toEqual({
+      calories: DEFAULT_GOAL.calories, // 2100, untouched
+      protein_g: 150,
+      carbs_g: undefined,
+      fat_g: undefined,
+    });
+  });
+
+  it("a later goal update carries forward fields the caller didn't mention", () => {
+    const current = { calories: 2200, protein_g: 140, carbs_g: 200, fat_g: 60 };
+    expect(mergeGoalUpdate(current, { calories: 1900 })).toEqual({
+      calories: 1900,
+      protein_g: 140, // carried over, not reset to the default
+      carbs_g: 200,
+      fat_g: 60,
+    });
+  });
+
+  it("an empty update is a no-op copy of the current goal", () => {
+    const current = { calories: 2200, protein_g: 140 };
+    expect(mergeGoalUpdate(current, {})).toEqual(current);
   });
 });

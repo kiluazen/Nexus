@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { EntryInput } from "./entry-shapes";
+export { GoalInput } from "./goal-shapes";
+export type { GoalInputT } from "./goal-shapes";
 
 const LOCAL_DATE_DESC =
   "The user's local date (YYYY-MM-DD). Always pass this from the user's timezone; if omitted the server falls back to the UTC date, which can land an evening entry on the wrong day.";

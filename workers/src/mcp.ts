@@ -1,10 +1,11 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { NexusEnv, NexusProps } from "./types";
-import { LogInput, HistoryInput, UpdateInput, FriendsInput } from "./schema/tool-inputs";
-import { LogOutput, HistoryOutput, UpdateOutput, FriendsOutput } from "./schema/tool-outputs";
+import { LogInput, HistoryInput, UpdateInput, FriendsInput, GoalInput } from "./schema/tool-inputs";
+import { LogOutput, HistoryOutput, UpdateOutput, FriendsOutput, GoalOutput } from "./schema/tool-outputs";
 import { logEntries, getHistory, updateEntry, type UserCtx } from "./data/entries";
 import { manageFriends } from "./data/friends";
+import { setGoal } from "./data/goals";
 import { mintWidgetToken } from "./instant";
 import { WIDGET_URI, widgetHtml } from "./widget/today-html";
 import { ValidationError, todayUtc } from "./lib/dates";
@@ -42,6 +43,7 @@ const WIDGET_META = {
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
 Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press", never "bench").
 Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely.
+Goal rules: only call nexus_set_goal when the user explicitly asks to change a calorie/protein/carb/fat target. Never call it just because they logged something.
 Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
 
 function errorResult(message: string) {
@@ -233,6 +235,22 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, this.user(), args));
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
+      },
+    );
+
+    this.server.registerTool(
+      "nexus_set_goal",
+      {
+        title: "Set Nexus goal",
+        description:
+          "Use this only when the user explicitly asks to change a daily target — e.g. 'set my calorie goal to 2200' or 'bump my protein goal to 150'. Only pass the fields they're changing; unmentioned fields keep their current value. Defaults are 2100 kcal / 120g protein until a goal is ever set. Every call creates a new goal record — past goals are kept as history, not overwritten, so a future day's card can show whatever goal was actually in effect that day.",
+        inputSchema: GoalInput.shape,
+        outputSchema: GoalOutput.shape,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      async (args) => {
+        const r = await safe(() => setGoal(this.env, this.user(), args));
         return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );

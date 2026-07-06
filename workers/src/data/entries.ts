@@ -8,6 +8,7 @@ import {
   type MealTotals,
 } from "../schema/entry-shapes";
 import { ValidationError, parseDate, todayUtc, addDaysUtc } from "../lib/dates";
+import { getGoalForDate } from "./goals";
 
 export interface UserCtx {
   userId: string;
@@ -240,6 +241,9 @@ export async function getHistory(
       fat_g: Math.round(sumT("fat_g") * 10) / 10,
       meals_logged: meals.length,
     };
+    // The goal in effect on THIS day, not whatever it is today — a friend's
+    // goal for a friend read, gated by the friendship check already run above.
+    result.goal = await getGoalForDate(env, args.friend_id ?? user.userId, toDate);
   }
 
   return result;

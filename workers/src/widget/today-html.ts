@@ -18,8 +18,11 @@ import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
 export const WIDGET_URI = "ui://widget/nexus-today-v2.html";
 
-const GOAL_KCAL = 2100;
-const GOAL_PROTEIN = 120;
+// Fallback only — a user who's never called nexus_set_goal has no goal row
+// yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
+// these exact numbers. Once data.goal arrives in the payload it always wins.
+const DEFAULT_GOAL_KCAL = 2100;
+const DEFAULT_GOAL_PROTEIN = 120;
 
 export function widgetHtml(): string {
   return `<div id="nexus-root"></div>
@@ -150,7 +153,7 @@ export function widgetHtml(): string {
 </style>
 <script>
 (function () {
-  var GOAL_KCAL = ${GOAL_KCAL}, GOAL_PROTEIN = ${GOAL_PROTEIN};
+  var GOAL_KCAL = ${DEFAULT_GOAL_KCAL}, GOAL_PROTEIN = ${DEFAULT_GOAL_PROTEIN};
   var root = document.getElementById("nexus-root");
   var live = false;
   var db = null;
@@ -226,6 +229,14 @@ export function widgetHtml(): string {
 
   function render(data) {
     if (!data) { root.innerHTML = ""; return; }
+    // The goal in effect on the rendered day — server-supplied per-day via
+    // getGoalForDate, so a future history/date-picker view will show
+    // whatever goal was actually active that day, not today's. Falls back to
+    // the same defaults the server uses for a user who's never set one.
+    if (data.goal) {
+      if (typeof data.goal.calories === "number") GOAL_KCAL = data.goal.calories;
+      if (typeof data.goal.protein_g === "number") GOAL_PROTEIN = data.goal.protein_g;
+    }
     var period = data.period || {};
     var single = period.from === period.to;
     var title = single ? fmtDate(period.from) : fmtDate(period.from) + " – " + fmtDate(period.to);

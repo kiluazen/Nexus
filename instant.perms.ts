@@ -54,6 +54,16 @@ const rules = {
       delete: 'isRequester || isAddressee',
     },
   },
+
+  goals: {
+    bind: ['isOwner', "auth.id != null && auth.id in data.ref('owner.id')"],
+    allow: {
+      view: 'isOwner',
+      create: 'isOwner',
+      update: 'isOwner',
+      delete: 'isOwner',
+    },
+  },
 } satisfies InstantRules
 
 export default rules

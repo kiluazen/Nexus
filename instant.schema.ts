@@ -44,6 +44,21 @@ const _schema = i.schema({
       status:     i.string().indexed(),            // "pending" | "active"
       created_at: i.date().indexed(),
     }),
+
+    // Calorie/protein/carb/fat targets. Append-only, never overwritten in
+    // place: changing a goal inserts a new row rather than mutating an
+    // existing one, so "current goal" is just "the latest row" and history
+    // is free — it's every row that came before. This is what lets a future
+    // history view show the goal that was actually in effect on a past date,
+    // not whatever it happens to be today.
+    goals: i.entity({
+      calorie_goal: i.number(),
+      protein_goal: i.number(),
+      carbs_goal:   i.number().optional(),
+      fat_goal:     i.number().optional(),
+      reason:       i.string().optional(),          // "cutting for summer", optional context
+      created_at:   i.date().indexed(),
+    }),
   },
 
   links: {
@@ -66,6 +81,11 @@ const _schema = i.schema({
     friendshipAddressee: {
       forward: { on: 'friendships', has: 'one', label: 'addressee' },
       reverse: { on: '$users', has: 'many', label: 'receivedFriendships' },
+    },
+    // goals.owner (one) <-> $users.goals (many)
+    goalOwner: {
+      forward: { on: 'goals', has: 'one', label: 'owner' },
+      reverse: { on: '$users', has: 'many', label: 'goals' },
     },
   },
 })

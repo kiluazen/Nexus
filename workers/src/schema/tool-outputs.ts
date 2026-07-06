@@ -63,6 +63,17 @@ const DayTotals = z
   .passthrough()
   .describe("Single-day rollup, present only when the query is one day.");
 
+const Goal = z
+  .object({
+    calories: z.number(),
+    protein_g: z.number(),
+    carbs_g: z.number().optional(),
+    fat_g: z.number().optional(),
+  })
+  .partial()
+  .passthrough()
+  .describe("The calorie/protein/carb/fat goal in effect on the queried day (defaults apply until the user sets one).");
+
 // Shared "a day (or range) of history" shape. Both the history read and the
 // log write return this (log adds `logged`), so the widget always has a full
 // card regardless of which tool produced it.
@@ -77,6 +88,7 @@ const historyShape = {
     .describe("Distinct exercise_key values, reuse these so progressions cluster."),
   pending_friend_requests: z.number().optional(),
   day_totals: DayTotals.optional(),
+  goal: Goal.optional(),
 } as const;
 
 export const HistoryOutput = z.object(historyShape);
@@ -100,6 +112,19 @@ export const UpdateOutput = z.object({
   items_count: z.number().optional(),
   weight_kg: z.number().optional(),
 });
+
+export const GoalOutput = z
+  .object({
+    calories: z.number(),
+    protein_g: z.number(),
+    carbs_g: z.number().optional(),
+    fat_g: z.number().optional(),
+    reason: z.string().optional(),
+    effective_from: z.string(),
+    updated: z.boolean(),
+  })
+  .partial()
+  .passthrough();
 
 // manageFriends returns different shapes per action (list vs add vs
 // accept/reject/remove). One permissive object covers them all.
