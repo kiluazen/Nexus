@@ -126,14 +126,19 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Nexus day card",
         description: "Live card showing the user's logged workouts, meals, and totals.",
-        mimeType: "text/html+skybridge",
+        // Confirmed via a live tail on prod: the actual ChatGPT MCP client
+        // declares clientCapabilities.extensions["io.modelcontextprotocol/ui"]
+        // .mimeTypes = ["text/html;profile=mcp-app"] on resources/read — the
+        // older "text/html+skybridge" mismatches that and the client aborts
+        // the read (responseStreamDisconnected / "Failed to fetch template").
+        mimeType: "text/html;profile=mcp-app",
         _meta: WIDGET_META,
       },
       async () => ({
         contents: [
           {
             uri: WIDGET_URI,
-            mimeType: "text/html+skybridge",
+            mimeType: "text/html;profile=mcp-app",
             text: fullWidgetHtml(),
             _meta: WIDGET_META,
           },
