@@ -47,34 +47,33 @@ export function widgetHtml(): string {
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
-    --nx-god-op: .34; --nx-god-h: 68%; --nx-god-blend: multiply;
+    --nx-god-op: .34; --nx-god-w: 46%; --nx-god-blend: multiply;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
   /* Upper-body busts flank the card — ::before = Venus (left), ::after =
-     Discobolus (right). Shown in full — no fade — cropped only by each box's
-     own 52% width. Blended against the card surface (multiply on light:
-     shadows read as ink against paper; screen on dark: highlights glow off
-     the dark surface) so they read as carved marble instead of a flat gray
-     watermark. Anchored below the bottom edge so the crop's cut line is
-     off-screen. Smaller on phone widths, matching the landing page's own
-     mobile treatment of the same two statues. */
+     Discobolus (right). background-size: contain (not a fixed height with
+     auto width) so the whole trimmed figure always fits inside its box and
+     scales with it — no clipped arm, no clipped head, at any card or screen
+     size. Blended against the card surface (multiply on light: shadows read
+     as ink against paper; screen on dark: highlights glow off the dark
+     surface) so they read as carved marble instead of a flat gray watermark.
+     --nx-god-w is the one knob that controls size everywhere; shrink it in
+     the phone media query and both figures scale down together. */
   #nexus-root::before, #nexus-root::after {
-    content: ""; position: absolute; top: 0; bottom: 0; width: 52%; z-index: 0;
-    pointer-events: none; background-repeat: no-repeat; opacity: var(--nx-god-op);
-    mix-blend-mode: var(--nx-god-blend);
+    content: ""; position: absolute; bottom: 0; width: var(--nx-god-w); height: 92%;
+    z-index: 0; pointer-events: none; background-repeat: no-repeat;
+    background-size: contain; opacity: var(--nx-god-op); mix-blend-mode: var(--nx-god-blend);
   }
   #nexus-root::before {
-    left: 0; background-image: url("${VENUS_DATA_URI}");
-    background-position: left -6px bottom -30px; background-size: auto var(--nx-god-h);
+    left: 0; background-image: url("${VENUS_DATA_URI}"); background-position: left bottom;
   }
   #nexus-root::after {
-    right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
-    background-position: right -14px bottom -30px; background-size: auto var(--nx-god-h);
+    right: 0; background-image: url("${DISCOBOLUS_DATA_URI}"); background-position: right bottom;
     opacity: calc(var(--nx-god-op) * 1.2);  /* the discus throw reads smaller in-frame — boost to match Venus's presence */
   }
   @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-h: 34%; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-w: 30%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
