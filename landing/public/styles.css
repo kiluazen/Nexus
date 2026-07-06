@@ -179,12 +179,6 @@ a { color: inherit; }
   margin: 0.4em 0 0.4em;
 }
 
-.setup-intro {
-  color: var(--body-ink);
-  font-size: 16px;
-  max-width: 54ch;
-}
-
 .setup-video {
   margin: 26px auto 34px;
   border: 1px solid var(--line);
