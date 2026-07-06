@@ -13,9 +13,9 @@ connector / app directories. Track items as they're complete.
 | Tool `title` / annotations (readOnlyHint / destructiveHint / openWorldHint) | ✅ | `workers/src/mcp.ts` |
 | Privacy policy URL | ✅ | `https://nexus.kushalsm.com/privacy-policy/` |
 | Public usage docs (3-5 examples) | ✅ | `https://nexus.kushalsm.com/usage-guide/` |
-| Test account with sample data | ✅ | Supply reviewer credentials at submission time, NOT in this doc |
+| Test account with sample data | ✅ | `openai-reviewer@nexus.kushalsm.com` provisioned + seeded (7 entries, goal, friend code) via `workers/scripts/seed-reviewer.mjs`; email+password sign-in verified end-to-end against production. Creds in `chatgpt-test-cases.md` |
 | Origin validation on MCP endpoint | ⏳ | TODO: tighten `Origin` header check on `/mcp` |
-| Connector branding (logo, name, short description) | ⏳ | `nexus.kushalsm.com` favicon exists; need 256×256 PNG |
+| Connector branding (logo, name, short description) | ✅ | 256×256 PNG at `landing/public/assets/nexus-logo-256.png` (7KB, under the 10KB cap), also served on the consent page |
 
 Submission tip from the research: missing tool annotations cause ~30% of
 rejections. We're clean on that axis — every tool has explicit

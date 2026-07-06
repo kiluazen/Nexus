@@ -2,9 +2,10 @@
 
 ## Test Credentials
 
-Nexus uses OAuth. Standard users sign in with an email code, but the production
-OAuth consent page also supports a preconfigured reviewer account so OpenAI can
-test without inbox access, account setup, payment, MFA, or extra coordination.
+Nexus uses OAuth. Standard users sign in with an email code, but a preconfigured
+reviewer account already exists in production so OpenAI can test with a plain
+email + password — **no inbox access, no email code, no account setup, no
+payment, no MFA**.
 
 Fill the Platform test-credentials field exactly like this:
 
@@ -13,9 +14,12 @@ username: openai-reviewer@nexus.kushalsm.com
 password: Nexus26!Review
 ```
 
-On the Nexus consent page, enter the username as the email address and the
-password in the "Code or reviewer password" field, then choose "Verify &
-connect".
+On the Nexus consent page (shown when ChatGPT connects to the app), the page
+opens on **Sign in**. Type the address above into the **Email** field, the
+password into the **Password** field, and click **Sign in**. That single step
+completes the OAuth connection — there is no verification-code field to fill.
+(If the page ever shows "Create account", the account was reset — re-run
+`workers/scripts/seed-reviewer.mjs` to restore it.)
 
 ## Positive Test Cases
 

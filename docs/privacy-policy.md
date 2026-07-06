@@ -55,10 +55,12 @@ or your AI agent to see.
 ## Authentication
 
 We use InstantDB email-code authentication as the standard identity provider.
-For app review, Nexus can also accept a preconfigured reviewer username and
-password on the OAuth consent page so reviewers can connect without inbox
-access or MFA. The reviewer password is stored as a Cloudflare Worker secret,
-not in the repository or public site.
+For app review, Nexus also supports email + password sign-in on the OAuth
+consent page, and a preconfigured reviewer account exists so reviewers can
+connect without inbox access, an email code, or MFA. Passwords are never stored
+in plain text: only a salted PBKDF2 hash is kept, in an access-controlled
+namespace that client tokens cannot read — never in the repository or on the
+public site.
 
 When an MCP client (Claude, ChatGPT, Codex, the Nexus CLI) connects, our
 OAuth 2.1 server issues a scoped access token bound to your user. That
