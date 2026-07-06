@@ -6,11 +6,13 @@
 // popup / phone widths so they never crowd the form). Images are referenced
 // from the landing domain — they're decorative, so a miss degrades gracefully.
 //
-// Two ways in, both immediate (no email code, no verification — what the OpenAI
-// review requires of the credentials we submit):
+// Two ways in:
 //   1. Sign in with Google  -> /auth/google/start?nonce=...
-//   2. Email + password      -> POST /oauth/decision {action: signin|signup}
-// Sign-in is the default; "Create an account" toggles to signup in place.
+//   2. Email + password:
+//        - Sign IN  is one code-free step (the path OpenAI reviewers use).
+//        - Sign UP  is two steps: POST signup_start (emails a code), then
+//          POST signup_verify (code + password) — so a password is only ever
+//          set on an email the person controls.
 const LANDING = "https://nexus.kushalsm.com";
 
 export function consentHtml(opts: {
@@ -52,8 +54,6 @@ export function consentHtml(opts: {
     min-height: 100dvh; display: flex; align-items: center; justify-content: center;
     padding: 24px; line-height: 1.5; overflow-x: hidden;
   }
-  /* Figures: faint bottom-corner accents by default (safe at any width);
-     full flanking treatment only when there's room for it. */
   .bg-art {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background-image: url(${LANDING}/assets/venus.webp?v=4), url(${LANDING}/assets/discobolus.webp?v=3);
@@ -90,6 +90,7 @@ export function consentHtml(opts: {
     border-radius: 9px; outline: none;
   }
   input:focus { border-color: var(--ink); }
+  input.code { text-align: center; letter-spacing: .4em; font-variant-numeric: tabular-nums; font-size: 18px; }
   button {
     width: 100%; margin-top: 18px; padding: 13px; font-size: 15px; font-weight: 500;
     font-family: var(--font-sans); color: var(--paper); background: var(--ink);
@@ -109,7 +110,9 @@ export function consentHtml(opts: {
   .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .toggle { margin-top: 16px; font-size: 13.5px; color: var(--muted); }
   .toggle a { color: var(--ink); font-weight: 500; text-decoration: none; cursor: pointer; }
+  .hint { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; text-transform: none; letter-spacing: 0; }
   .err { color: #b0322c; font-size: 13px; min-height: 1.1em; margin-top: 12px; }
+  .hidden { display: none; }
   @media (max-width: 480px) {
     body { padding: 14px; }
     .card { padding: 26px 20px; border-radius: 14px; }
@@ -127,6 +130,11 @@ ${googleBlock}
     <input id="email" type="email" placeholder="you@example.com" autocomplete="email" required autofocus/>
     <label for="password">Password</label>
     <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required/>
+    <div id="code-row" class="hidden">
+      <label for="code">Verification code</label>
+      <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" maxlength="6"/>
+      <p class="hint" id="hint"></p>
+    </div>
     <button id="submit" type="submit">Sign in</button>
   </form>
   <p class="toggle" id="toggle">New to Nexus? <a id="toggle-link">Create an account</a></p>
@@ -136,11 +144,21 @@ ${googleBlock}
   const nonce = ${JSON.stringify(opts.nonce)};
   const $ = (s) => document.querySelector(s);
   const err = (m) => { $("#err").textContent = m || ""; };
-  let mode = "signin"; // "signin" | "signup"
+  let mode = "signin";  // "signin" | "signup"
+  let stage = "form";   // "form" | "code"  (signup only)
 
+  function submitLabel() {
+    if (mode === "signin") return "Sign in";
+    return stage === "form" ? "Create account" : "Verify & create account";
+  }
+  function showCode(on) {
+    $("#code-row").classList.toggle("hidden", !on);
+    if (!on) { $("#code").value = ""; $("#hint").textContent = ""; }
+  }
   function applyMode() {
     const signin = mode === "signin";
-    $("#submit").textContent = signin ? "Sign in" : "Create account";
+    if (signin) { stage = "form"; showCode(false); }
+    $("#submit").textContent = submitLabel();
     $("#password").autocomplete = signin ? "current-password" : "new-password";
     $("#toggle").innerHTML = signin
       ? 'New to Nexus? <a id="toggle-link">Create an account</a>'
@@ -163,25 +181,40 @@ ${googleBlock}
     const email = $("#email").value.trim();
     const password = $("#password").value;
     if (!email || !password) return;
+
     $("#submit").disabled = true;
-    $("#submit").textContent = mode === "signin" ? "Signing in…" : "Creating…";
+    $("#submit").textContent =
+      mode === "signin" ? "Signing in…" : stage === "form" ? "Sending code…" : "Verifying…";
     try {
-      const { ok, data } = await post({ action: mode, email, password });
-      if (ok && data.redirect_to) { window.location.href = data.redirect_to; return; }
-      if (data.code === "no_account") { mode = "signup"; applyMode(); err("No account yet — set a password to create one."); }
-      else if (data.code === "exists") { mode = "signin"; applyMode(); err("You already have an account. Enter your password to sign in."); }
-      else err(data.error || "Something went wrong.");
+      if (mode === "signin") {
+        const { ok, data } = await post({ action: "signin", email, password });
+        if (ok && data.redirect_to) { window.location.href = data.redirect_to; return; }
+        if (data.code === "no_account") { mode = "signup"; applyMode(); err("No account yet — create one below."); }
+        else if (data.code === "no_password") { mode = "signup"; applyMode(); err("No password on this account yet — set one below (we'll email a code)."); }
+        else err(data.error || "Something went wrong.");
+      } else if (stage === "form") {
+        const { ok, data } = await post({ action: "signup_start", email, password });
+        if (ok && data.code_sent) {
+          stage = "code"; showCode(true);
+          $("#hint").textContent = "We emailed a 6-digit code to " + email + ".";
+          $("#code").focus();
+        } else if (data.code === "exists") { mode = "signin"; applyMode(); err("You already have an account. Enter your password to sign in."); }
+        else err(data.error || "Something went wrong.");
+      } else {
+        const code = $("#code").value.trim();
+        if (!/^\\d{6}$/.test(code)) { err("Enter the 6-digit code from your email."); return; }
+        const { ok, data } = await post({ action: "signup_verify", email, password, code });
+        if (ok && data.redirect_to) { window.location.href = data.redirect_to; return; }
+        else err(data.error || "That didn't work. Try again.");
+      }
     } catch (ex) {
       err("Network error. Try again.");
     } finally {
-      // Re-derive from the CURRENT mode: an auto-switch (no_account/exists) may
-      // have flipped it, so restoring a captured pre-request label would leave
-      // the button contradicting the form (e.g. "Sign in" while in signup mode).
-      $("#submit").disabled = false;
-      $("#submit").textContent = mode === "signin" ? "Sign in" : "Create account";
+      $("#submit").disabled = false; $("#submit").textContent = submitLabel();
     }
   });
 
+  ${opts.googleEnabled ? `$("#google").addEventListener("click", () => { window.location.href = "/auth/google/start?nonce=" + encodeURIComponent(nonce); });` : ""}
   applyMode();
 </script>
 </body>

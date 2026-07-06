@@ -1,12 +1,26 @@
 // Email + password sign-in on top of InstantDB.
 //
-// InstantDB has no native passwords, so we store a PBKDF2 hash on the managed
-// $users row (a custom optional attr) and mint an InstantDB session token via
-// the admin API once the password checks out. This is the path we hand OpenAI
-// reviewers: a plain email + password that logs in immediately, no code, no
-// verification — exactly what the submission guidelines require.
-import { adminDb, ensureFriendCode } from "../instant";
+// Two security properties this file enforces:
+//  1. The PBKDF2 hash lives in `passwordCredentials`, a namespace denied to
+//     every client token (instant.perms.ts). $users is client-readable, so the
+//     hash must never sit there. Only the admin client (here) touches it.
+//  2. Creating a password account REQUIRES proving email ownership: signup is
+//     two steps — send a magic code, then verify it — and the password is only
+//     stored after the code checks out. This blocks pre-account-hijacking (you
+//     can't set a password on an email you don't control). Sign-IN stays a
+//     single code-free step, which is the path we hand OpenAI reviewers.
+import { adminDb, ensureFriendCode, sendLoginCode, verifyLoginCode, id as newId } from "../instant";
 import type { NexusEnv } from "../types";
+
+export class AuthError extends Error {
+  constructor(
+    public code: "exists" | "no_account" | "no_password" | "bad_password" | "bad_code" | "weak",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
 
 // The consent flow only needs the identity — the OAuth provider issues its own
 // access/refresh tokens, and the widget's InstantDB token is minted per MCP
@@ -14,16 +28,6 @@ import type { NexusEnv } from "../types";
 export interface PasswordLogin {
   userId: string;
   email: string;
-}
-
-export class AuthError extends Error {
-  constructor(
-    public code: "exists" | "no_account" | "no_password" | "bad_password" | "weak",
-    message: string,
-  ) {
-    super(message);
-    this.name = "AuthError";
-  }
 }
 
 // Cloudflare Workers' WebCrypto caps PBKDF2 at 100k iterations (higher throws
@@ -79,70 +83,102 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return diff === 0;
 }
 
-async function userByEmail(env: NexusEnv, email: string) {
-  const res = await adminDb(env).query({ $users: { $: { where: { email } } } });
-  return res.$users[0] as { id: string; email?: string; password_hash?: string } | undefined;
+interface UserCred {
+  id: string;
+  email?: string;
+  credId?: string;
+  hash?: string;
 }
 
-/**
- * Create a NEW account with a password. Refuses any email that already has a
- * $users row — even a passwordless (magic-code / Google) one. Signup proves
- * nothing about email ownership, so letting it attach a password to an
- * existing account would be an account takeover. Existing passwordless users
- * prove ownership via Google or the CLI's magic-code flow instead.
- */
-export async function signUpWithPassword(
-  env: NexusEnv,
-  email: string,
-  password: string,
-): Promise<PasswordLogin> {
-  if (password.length < 8) throw new AuthError("weak", "Password must be at least 8 characters.");
-  const existing = await userByEmail(env, email);
-  if (existing) {
-    throw new AuthError("exists", "An account with this email already exists. Sign in instead.");
-  }
-  const db = adminDb(env);
-  const hash = await hashPassword(password);
-  // createToken auto-provisions the $users row for a new email (we don't keep
-  // the token — the OAuth provider issues its own).
-  await db.auth.createToken({ email });
-  const user = await userByEmail(env, email);
-  if (!user) throw new AuthError("no_account", "Could not create the account. Try again.");
-  await db.transact([db.tx.$users[user.id]!.update({ password_hash: hash, created_at: Date.now() })]);
-  await ensureFriendCode(db, user.id);
-  return { userId: user.id, email: user.email ?? email };
+/** Look up a user by email and the hash from their locked-down credential row. */
+async function userWithCred(env: NexusEnv, email: string): Promise<UserCred | undefined> {
+  const res = await adminDb(env).query({
+    $users: { $: { where: { email } }, passwordCredential: {} },
+  });
+  const u = res.$users[0] as
+    | { id: string; email?: string; passwordCredential?: unknown }
+    | undefined;
+  if (!u) return undefined;
+  const link = u.passwordCredential;
+  const cred = (Array.isArray(link) ? link[0] : link) as
+    | { id: string; hash?: string }
+    | undefined;
+  return { id: u.id, email: u.email, credId: cred?.id, hash: cred?.hash };
 }
 
-/** Sign in with an existing password account. */
+/** Sign in with an existing password account (single, code-free step). */
 export async function signInWithPassword(
   env: NexusEnv,
   email: string,
   password: string,
 ): Promise<PasswordLogin> {
-  const user = await userByEmail(env, email);
-  if (!user) {
+  const u = await userWithCred(env, email);
+  if (!u) {
     throw new AuthError("no_account", "No account for this email. Create one below.");
   }
-  if (!user.password_hash) {
-    // Existing magic-code/Google account without a password. Don't nudge to
-    // signup (it would be refused — see signUpWithPassword) and don't leak
-    // which method they used; point at the ownership-proving path.
+  if (!u.hash) {
+    // Existing magic-code/Google account with no password. Don't leak which
+    // method they used; point at the ownership-proving paths.
     throw new AuthError(
       "no_password",
-      "This account has no password. Continue with Google instead.",
+      "This account has no password yet. Continue with Google, or create a password below.",
     );
   }
-  const ok = await verifyPassword(password, user.password_hash);
+  const ok = await verifyPassword(password, u.hash);
   if (!ok) throw new AuthError("bad_password", "Wrong email or password.");
-  // No token mint and no friend-code touch here: the OAuth provider issues its
-  // own tokens, the widget token is minted per MCP session, and friend codes
-  // are assigned lazily on first friends-tool use. That leaves sign-in at a
-  // single InstantDB round-trip (the lookup above) plus the PBKDF2 verify.
-  return { userId: user.id, email: user.email ?? email };
+  return { userId: u.id, email: u.email ?? email };
 }
 
-/** True if this email already has a password set (drives signup-vs-signin UX). */
-export async function hasPasswordAccount(env: NexusEnv, email: string): Promise<boolean> {
-  const user = await userByEmail(env, email);
-  return Boolean(user?.password_hash);
+/**
+ * Signup step 1: validate and email a verification code. Nothing is created or
+ * stored yet — the code is what proves the person controls the address, so no
+ * password can be attached to an email you don't own.
+ */
+export async function startPasswordSignup(
+  env: NexusEnv,
+  email: string,
+  password: string,
+): Promise<void> {
+  if (password.length < 8) throw new AuthError("weak", "Password must be at least 8 characters.");
+  const u = await userWithCred(env, email);
+  if (u?.hash) {
+    throw new AuthError("exists", "An account with this email already exists. Sign in instead.");
+  }
+  await sendLoginCode(env, email);
+}
+
+/**
+ * Signup step 2: verify the code (proves ownership and provisions/returns the
+ * $users row), then store the password in the admin-only credential namespace.
+ * Works for a brand-new email and for a legacy passwordless account setting a
+ * password for the first time.
+ */
+export async function completePasswordSignup(
+  env: NexusEnv,
+  email: string,
+  password: string,
+  code: string,
+): Promise<PasswordLogin> {
+  if (password.length < 8) throw new AuthError("weak", "Password must be at least 8 characters.");
+  let login;
+  try {
+    login = await verifyLoginCode(env, email, code); // checkMagicCode: throws on bad code
+  } catch {
+    throw new AuthError("bad_code", "That code didn't match. Check your email and try again.");
+  }
+  const existing = await userWithCred(env, email);
+  if (existing?.hash) {
+    // Raced another signup, or already had a password — don't clobber it.
+    throw new AuthError("exists", "An account with this email already exists. Sign in instead.");
+  }
+  const db = adminDb(env);
+  const hash = await hashPassword(password);
+  const credId = existing?.credId ?? newId();
+  await db.transact([
+    db.tx.passwordCredentials[credId]!
+      .update({ hash, updated_at: Date.now() })
+      .link({ user: login.userId }),
+  ]);
+  await ensureFriendCode(db, login.userId);
+  return { userId: login.userId, email: login.email };
 }
