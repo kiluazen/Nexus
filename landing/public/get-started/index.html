@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add Nexus to ChatGPT</title>
+    <meta
+      name="description"
+      content="Add Nexus to ChatGPT as a connector: enable developer mode, create the app, paste the Nexus MCP URL, and sign in."
+    >
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="bg-art" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Nexus home">
+        <span class="brand-mark"><img src="/assets/nexus-logo-256.png" alt=""></span>
+        <span>Nexus</span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="/get-started/">Get started</a>
+        <a href="/usage-guide/">Usage</a>
+        <a href="/privacy-policy/">Privacy</a>
+        <a href="/terms-of-service/">Terms</a>
+      </nav>
+    </header>
+
+    <main class="setup-main">
+      <p class="eyebrow">Get started</p>
+      <h1>Add Nexus to ChatGPT</h1>
+      <p class="setup-intro">
+        Nexus is in review for the ChatGPT app directory. Until it's live, you can add it
+        yourself as a connector in about two minutes. Watch the walkthrough, then follow the steps.
+      </p>
+
+      <div class="setup-video">
+        <video controls playsinline preload="metadata" poster="/assets/app-screenshot.png">
+          <source src="/assets/nexus-chatgpt-demo.mp4" type="video/mp4">
+        </video>
+      </div>
+
+      <ol class="setup-steps">
+        <li>
+          <h3>Turn on developer mode</h3>
+          <p>In ChatGPT, open <code>Settings → Connectors → Advanced</code> and enable
+          <strong>Developer mode</strong>.</p>
+        </li>
+        <li>
+          <h3>Create a new connector</h3>
+          <p>Back in <code>Connectors</code>, choose <strong>Create</strong> and name it Nexus.</p>
+        </li>
+        <li>
+          <h3>Paste the Nexus MCP URL</h3>
+          <p>Use this as the connector's server URL:</p>
+          <div class="endpoint-row">
+            <code id="mcp-url">https://mcp.nexus.kushalsm.com/mcp</code>
+            <button id="copy-btn" type="button">Copy</button>
+          </div>
+        </li>
+        <li>
+          <h3>Sign in</h3>
+          <p>Complete the Nexus OAuth flow when prompted to link your account.</p>
+        </li>
+        <li>
+          <h3>Start logging</h3>
+          <p>Say something like <em>"I just did bench press, 3 sets of 60kg for 8."</em>
+          Nexus logs it and you can ask about your history any time.</p>
+        </li>
+      </ol>
+    </main>
+
+    <footer class="site-footer">
+      <span><a href="https://kushalsm.com">by kushalsm.com</a></span>
+    </footer>
+
+    <script src="/copy.js"></script>
+  </body>
+</html>

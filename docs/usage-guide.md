@@ -14,18 +14,19 @@ In your MCP client, add a custom connector at:
 https://mcp.nexus.kushalsm.com/mcp
 ```
 
-Sign in with Google or email/password. The first time you do this, Nexus
-provisions your account automatically — no signup form. After auth, the
-client sees four tools.
+Sign in through the Nexus OAuth flow. Standard users receive an email code;
+OpenAI reviewers can use the supplied reviewer username and password. The
+first time you authenticate, Nexus provisions your account automatically. After
+auth, the client sees four tools.
 
 ## The four tools
 
 | Tool | What it does | Read or write |
 |---|---|---|
-| `log_fitness_entries` | Add new workouts, meals, or body weight to today (or a specified date). | write |
-| `get_fitness_history` | Read your entries (or a friend's, if they've accepted you). | read |
-| `update_fitness_entry` | Replace an existing entry by ID. | write |
-| `manage_friend_connections` | Add, accept, reject, remove friends — share history with people you train with. | write |
+| `nexus_log_entries` | Add new workouts, meals, or body weight to today (or a specified date). | write |
+| `nexus_get_history` | Read your entries (or a friend's, if they've accepted you). | read |
+| `nexus_update_entry` | Replace an existing entry by ID. | write |
+| `nexus_manage_friends` | Add, accept, reject, remove friends — share history with people you train with. | write |
 
 ## Five things to try
 
@@ -35,7 +36,7 @@ client sees four tools.
 "I just did 4 sets of dumbbell press, 12.5kg per side, 8 reps each set."
 ```
 
-The agent calls `log_fitness_entries` with:
+The agent calls `nexus_log_entries` with:
 ```json
 {
   "entries": [{
@@ -85,7 +86,7 @@ The server computes meal totals server-side; the agent doesn't need to.
 "What did I work yesterday? Plan today's session around it."
 ```
 
-The agent calls `get_fitness_history` for yesterday, sees the muscle groups
+The agent calls `nexus_get_history` for yesterday, sees the muscle groups
 hit, and recommends complementary work. The response includes
 `your_exercises` — every `exercise_key` you've ever logged — so the agent
 can match new exercises to ones you already do.
@@ -96,17 +97,17 @@ can match new exercises to ones you already do.
 "My friend's code is NEXUS-R3M8. Add them."
 ```
 
-`manage_friend_connections(action="add", code="NEXUS-R3M8")` sends a pending
+`nexus_manage_friends(action="add", code="NEXUS-R3M8")` sends a pending
 request. The friend accepts via their own MCP client:
 
 ```
 "Accept the friend request from Kushal."
 ```
 
-`manage_friend_connections(action="accept", display_name="Kushal SM")`.
+`nexus_manage_friends(action="accept", email="kushal@example.com")`.
 
 Once accepted, either side can pull the other's history with
-`get_fitness_history(friend_id=<friend's user_id>)`.
+`nexus_get_history(friend_id=<friend's user_id>)`.
 
 ### 5. Fix a mistake
 
@@ -114,8 +115,8 @@ Once accepted, either side can pull the other's history with
 "Actually that bench was at 25kg not 22.5, fix it."
 ```
 
-The agent reads the most recent entry via `get_fitness_history`, gets the
-`id`, and calls `update_fitness_entry(entry_id=<id>, data={...new full data...})`.
+The agent reads the most recent entry via `nexus_get_history`, gets the
+`id`, and calls `nexus_update_entry(entry_id=<id>, data={...new full data...})`.
 
 Updates are full-document replacements, not patches — the agent sends the
 complete new shape. For meals, the server recomputes totals.
@@ -135,7 +136,7 @@ For terminal use without an MCP client:
 
 ```sh
 pip install nexus-fitness
-nexus auth login                       # opens browser for Google login
+nexus auth login                       # starts the Nexus email-code login flow
 nexus log --entries '[{"type":"workout","exercise":"Squat","exercise_key":"squat","sets":[{"weight_kg":60,"reps":10},{"weight_kg":60,"reps":10},{"weight_kg":60,"reps":10}]}]'
 nexus history                          # last 7 days
 ```

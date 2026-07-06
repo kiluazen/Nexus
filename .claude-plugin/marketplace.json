@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
+  "name": "nexus",
+  "owner": { "name": "Kushal SM" },
+  "description": "Nexus — workout & nutrition tracking for your agent.",
+  "plugins": [
+    {
+      "name": "nexus",
+      "source": "./plugins/claude-code",
+      "description": "Track workouts, meals, and body weight. Talk naturally; Nexus logs it.",
+      "category": "Productivity",
+      "keywords": ["fitness", "nutrition", "workout", "tracker", "mcp"]
+    }
+  ]
+}

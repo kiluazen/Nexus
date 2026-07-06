@@ -8,6 +8,11 @@ export function parseDate(value: string | null | undefined): string {
   if (isNaN(d.getTime())) {
     throw new ValidationError(`Invalid date: ${trimmed}.`);
   }
+  // V8 silently rolls impossible dates over (2026-02-30 -> 2026-03-02), so the
+  // stored day would disagree with what the user said. Reject on round-trip.
+  if (d.toISOString().slice(0, 10) !== trimmed) {
+    throw new ValidationError(`Invalid date: ${trimmed} is not a real calendar date.`);
+  }
   return trimmed;
 }
 

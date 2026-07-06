@@ -2,7 +2,7 @@ import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import defaultHandler from "./handlers/default";
 import restApi from "./handlers/rest-api";
 import { NexusMcpAgent } from "./mcp";
-import { verifySupabaseJwt, displayNameFromClaims } from "./auth/supabase-jwt";
+import { userFromRefreshToken, displayNameFromEmail } from "./instant";
 import type { NexusEnv } from "./types";
 
 export { NexusMcpAgent };
@@ -41,17 +41,19 @@ export default new OAuthProvider({
   // trailing-slash edge case cleanly.
   resourceMatchOriginOnly: true,
 
-  // The nexus CLI does its OWN PKCE flow against Supabase Auth (skipping
-  // our OAuth surface entirely) and presents the resulting Supabase JWT as
-  // a bearer. This callback lets those tokens through after JWKS verify.
+  // The nexus CLI logs in with an email magic code against
+  // /api/v1/auth/{request_code,verify_code} and stores the InstantDB refresh
+  // token it gets back. That token is presented as a bearer on API calls;
+  // this callback resolves it to the same identity the OAuth flow issues.
   async resolveExternalToken({ token, env }) {
-    const claims = await verifySupabaseJwt(token, env as NexusEnv);
-    if (!claims) return null;
+    const user = await userFromRefreshToken(env as NexusEnv, token);
+    if (!user) return null;
+    const email = user.email ?? "";
     return {
       props: {
-        userId: claims.sub,
-        email: claims.email ?? "",
-        displayName: displayNameFromClaims(claims),
+        userId: user.id,
+        email,
+        displayName: displayNameFromEmail(email),
       },
     };
   },

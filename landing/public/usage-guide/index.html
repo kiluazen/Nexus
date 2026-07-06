@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nexus Usage Guide</title>
+    <meta
+      name="description"
+      content="How to use Nexus tools for workouts, meals, body weight, history, and friends from ChatGPT or another MCP client."
+    >
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="legal-page">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Nexus home">
+        <span class="brand-mark"><img src="/assets/nexus-logo-256.png" alt=""></span>
+        <span>Nexus</span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="/get-started/">Get started</a>
+        <a href="/usage-guide/">Usage</a>
+        <a href="/privacy-policy/">Privacy</a>
+        <a href="/terms-of-service/">Terms</a>
+      </nav>
+    </header>
+
+    <main class="legal-main">
+      <p class="eyebrow">Usage guide</p>
+      <h1>Nexus</h1>
+      <p class="muted">
+        Connect the remote MCP server at <code>https://mcp.nexus.kushalsm.com/mcp</code>,
+        sign in through the Nexus OAuth flow, and use the four Nexus tools from ChatGPT,
+        Claude, Codex, or another MCP-aware client.
+      </p>
+
+      <section>
+        <h2>Tools</h2>
+        <ul>
+          <li><code>nexus_log_entries</code>: add workouts, meals, or body-weight entries.</li>
+          <li><code>nexus_get_history</code>: read your entries, date ranges, exercise keys, and shared friend history.</li>
+          <li><code>nexus_update_entry</code>: replace an existing entry by ID.</li>
+          <li><code>nexus_manage_friends</code>: list, add, accept, reject, or remove friend connections.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Example prompts</h2>
+        <ul>
+          <li>"I just did bench press, 3 sets: 60kg for 8, 60kg for 7, and 55kg for 6."</li>
+          <li>"I had lunch: 2 chapatis, egg bhurji, and a small salad. Estimate macros and log it."</li>
+          <li>"What did I eat and train today?"</li>
+          <li>"Actually that first bench set was 9 reps, not 8."</li>
+          <li>"What's my Nexus friend code?"</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>CLI</h2>
+        <p>For terminal use:</p>
+        <pre><code>pip install nexus-fitness
+nexus auth login
+nexus history</code></pre>
+      </section>
+
+      <section>
+        <h2>Limits</h2>
+        <ul>
+          <li>No medical advice, diagnosis, or treatment guidance.</li>
+          <li>No food photo parsing yet; describe the meal in text.</li>
+          <li>No bulk import from other fitness apps.</li>
+          <li>Nutrition values are estimates supplied by the assistant and stored by Nexus.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span><a href="https://kushalsm.com">by kushalsm.com</a></span>
+    </footer>
+  </body>
+</html>

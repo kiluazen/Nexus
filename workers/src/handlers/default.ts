@@ -1,7 +1,11 @@
 import type { NexusEnv } from "../types";
-import { handleAuthorize, handleCallback } from "./authorize";
+import { handleAuthorize } from "./authorize";
 import { handleDecision } from "./decision";
 import { handleProtectedResource } from "./protected-resource";
+import { sendLoginCode, verifyLoginCode, revokeToken } from "../instant";
+import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default {
   async fetch(req: Request, env: NexusEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -19,7 +23,7 @@ export default {
 
     // OpenAI domain verification token — apex-served plain text.
     if (path === "/.well-known/openai-apps-challenge") {
-      return new Response("p7WC1Y8Ev8u7vcTTDqzMy7RAZo5YtbfLifniIRJKXe8\n", {
+      return new Response("ihOAYeRCh3uL2rZ_X5yOgScrfhIcpyqVBTr7BuTJ5d4\n", {
         headers: { "content-type": "text/plain" },
       });
     }
@@ -28,20 +32,80 @@ export default {
     if (path === "/authorize" || path.startsWith("/authorize/")) {
       return handleAuthorize(req, env);
     }
-    if (path === "/auth/callback") {
-      return handleCallback(req, env);
-    }
     if (path === "/oauth/decision") {
       return handleDecision(req, env);
     }
 
-    // Unauthenticated CLI bootstrap
+    // Unauthenticated CLI/agent login: email magic code in, InstantDB
+    // refresh token out. The refresh token is the CLI's bearer from then on.
     if (req.method === "GET" && path === "/api/v1/auth/config") {
       return Response.json({
         auth_enabled: true,
-        supabase_url: env.SUPABASE_URL,
-        supabase_publishable_key: env.SUPABASE_PUBLISHABLE_KEY,
+        flow: "email_code",
+        request_code: "/api/v1/auth/request_code",
+        verify_code: "/api/v1/auth/verify_code",
       });
+    }
+    if (req.method === "POST" && path === "/api/v1/auth/request_code") {
+      const body = await req.json<{ email?: string }>().catch(() => ({} as { email?: string }));
+      const email = (body.email ?? "").trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) {
+        return Response.json({ error: "invalid_email" }, { status: 400 });
+      }
+      // One code per address per minute (KV's minimum TTL) — enough to stop
+      // accidental loops.
+      const rlKey = `rl:code:${email}`;
+      if (await env.NEXUS_CACHE.get(rlKey)) {
+        return Response.json({ error: "slow_down" }, { status: 429 });
+      }
+      await env.NEXUS_CACHE.put(rlKey, "1", { expirationTtl: 60 });
+      try {
+        await sendLoginCode(env, email);
+      } catch (e) {
+        console.error("request_code failed", e);
+        return Response.json({ error: "send_failed" }, { status: 502 });
+      }
+      return Response.json({ sent: true });
+    }
+    if (req.method === "POST" && path === "/api/v1/auth/verify_code") {
+      const body = await req
+        .json<{ email?: string; code?: string }>()
+        .catch(() => ({} as { email?: string; code?: string }));
+      const email = (body.email ?? "").trim().toLowerCase();
+      const code = (body.code ?? "").trim();
+      if (!EMAIL_RE.test(email) || !/^\d{6}$/.test(code)) {
+        return Response.json({ error: "invalid_email_or_code" }, { status: 400 });
+      }
+      if (await isCodeLocked(env, email)) {
+        return Response.json({ error: "too_many_attempts" }, { status: 429 });
+      }
+      try {
+        const login = await verifyLoginCode(env, email, code);
+        await clearCodeFailures(env, email);
+        return Response.json({
+          token: login.refreshToken,
+          user_id: login.userId,
+          email: login.email,
+        });
+      } catch (e) {
+        console.error("verify_code failed", e);
+        await recordCodeFailure(env, email);
+        return Response.json({ error: "invalid_code" }, { status: 401 });
+      }
+    }
+    // Revoke the presented InstantDB refresh token so `nexus auth logout`
+    // invalidates the session server-side, not just locally.
+    if (req.method === "POST" && path === "/api/v1/auth/logout") {
+      const auth = req.headers.get("authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token) {
+        try {
+          await revokeToken(env, token);
+        } catch (e) {
+          console.error("logout revoke failed", e);
+        }
+      }
+      return Response.json({ logged_out: true });
     }
 
     if (path === "/health") {
@@ -51,14 +115,14 @@ export default {
     if (path === "/") {
       return Response.json({
         name: "Nexus",
-        version: "3.0",
+        version: "4.0",
         mcp_path: "/mcp",
         auth_enabled: true,
         tools: [
-          "log_fitness_entries",
-          "get_fitness_history",
-          "update_fitness_entry",
-          "manage_friend_connections",
+          "nexus_log_entries",
+          "nexus_get_history",
+          "nexus_update_entry",
+          "nexus_manage_friends",
         ],
       });
     }

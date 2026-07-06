@@ -3,16 +3,13 @@
   "name": "nexus-mcp",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   "kv_namespaces": [
     { "binding": "OAUTH_KV",    "id": "eaaed7dedb9a410281488e12716c5041" },
     { "binding": "NEXUS_CACHE", "id": "7b300dd97fac4570a143cc6a462780bb" }
   ],
 
-  "hyperdrive": [
-    { "binding": "NEXUS_DB", "id": "7634c5ea1a4f4ca6a73dd6764fcd2c0a" }
-  ],
 
   "durable_objects": {
     "bindings": [{ "name": "MCP_OBJECT", "class_name": "NexusMcpAgent" }]
@@ -30,7 +27,7 @@
 
   "vars": {
     "BASE_URL": "https://mcp.nexus.kushalsm.com",
-    "SUPABASE_URL": "https://addyzjpcjifdytkiqepa.supabase.co",
-    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHl6anBjamlmZHl0a2lxZXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NTA2ODMsImV4cCI6MjA4OTMyNjY4M30.UXSeG9MHauTajNcgU7isXzuYBkC-N6cBux6Pp2X3z80"
+    "INSTANT_APP_ID": "17362c65-4c31-4e79-be0f-79fdca55c28a",
+    "REVIEWER_LOGIN_EMAIL": "openai-reviewer@nexus.kushalsm.com"
   }
 }

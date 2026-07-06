@@ -8,7 +8,7 @@ interface ApiCtx {
 }
 
 function userCtx(props: NexusProps) {
-  return { userId: props.userId, displayName: props.displayName };
+  return { userId: props.userId, email: props.email, displayName: props.displayName };
 }
 
 function err(message: string, status: number) {
@@ -52,11 +52,11 @@ async function dispatch(req: Request, env: NexusEnv, ctx: ApiCtx): Promise<Respo
       return Response.json(result);
     }
     if (req.method === "POST" && url.pathname === "/api/v1/update") {
-      const body = await readJson<{ entry_id: number; data: Record<string, unknown> }>(req);
+      const body = await readJson<{ entry_id: string; data: Record<string, unknown> }>(req);
       return Response.json(await updateEntry(env, user, body));
     }
     if (req.method === "POST" && url.pathname === "/api/v1/friends") {
-      const body = await readJson<{ action: string; code?: string; display_name?: string }>(req);
+      const body = await readJson<{ action: string; code?: string; email?: string }>(req);
       return Response.json(await manageFriends(env, user, body));
     }
     return err("not_found", 404);

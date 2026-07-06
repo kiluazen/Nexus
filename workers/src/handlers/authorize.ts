@@ -1,7 +1,6 @@
 import type { AuthRequest } from "@cloudflare/workers-oauth-provider";
 import type { NexusEnv } from "../types";
 import { consentHtml } from "../auth/consent-html";
-import { callbackHtml } from "../auth/callback-html";
 
 const CONSENT_TTL = 60 * 10; // 10 minutes
 
@@ -55,33 +54,10 @@ export async function handleAuthorize(req: Request, env: NexusEnv): Promise<Resp
   const stash = await env.NEXUS_CACHE.get(`consent:${nonce}`);
   if (!stash) return expiredHtml();
   const parsed = JSON.parse(stash) as AuthRequest & { _client?: string };
-  return new Response(consentHtml({
-    nonce,
-    clientName: parsed._client ?? "an application",
-    supabaseUrl: env.SUPABASE_URL,
-    publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
-    baseUrl: env.BASE_URL,
-  }), { headers: { "content-type": "text/html; charset=utf-8" } });
-}
-
-export async function handleCallback(req: Request, env: NexusEnv): Promise<Response> {
-  const url = new URL(req.url);
-  const nonce = url.searchParams.get("nonce") ?? "";
-  let clientName = "an application";
-  if (nonce) {
-    const stash = await env.NEXUS_CACHE.get(`consent:${nonce}`);
-    if (stash) {
-      const parsed = JSON.parse(stash) as AuthRequest & { _client?: string };
-      clientName = parsed._client ?? clientName;
-    }
-  }
-  return new Response(callbackHtml({
-    nonce,
-    clientName,
-    supabaseUrl: env.SUPABASE_URL,
-    publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
-    baseUrl: env.BASE_URL,
-  }), { headers: { "content-type": "text/html; charset=utf-8" } });
+  return new Response(
+    consentHtml({ nonce, clientName: parsed._client ?? "an application" }),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
 }
 
 function expiredHtml(): Response {
@@ -91,12 +67,17 @@ function expiredHtml(): Response {
   return new Response(body, { status: 410, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
+/**
+ * Read the stashed auth request. `consume` deletes it (final approve/deny);
+ * peeking keeps it alive so the request-code step can run first.
+ */
 export async function loadParsedAuthRequest(
   env: NexusEnv,
   nonce: string,
+  opts: { consume: boolean },
 ): Promise<AuthRequest | null> {
   const raw = await env.NEXUS_CACHE.get(`consent:${nonce}`);
   if (!raw) return null;
-  await env.NEXUS_CACHE.delete(`consent:${nonce}`);
+  if (opts.consume) await env.NEXUS_CACHE.delete(`consent:${nonce}`);
   return JSON.parse(raw) as AuthRequest;
 }
