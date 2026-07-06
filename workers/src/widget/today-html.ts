@@ -41,21 +41,23 @@ export function widgetHtml(): string {
          value) — the statues now show in full behind these boxes with a
          brightening "screen" blend, so the box needs to dim what's behind
          it, not lighten it, or the CARBS/FAT labels wash out. */
-      --nx-boxbg: rgba(0,0,0,.4); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      --nx-boxbg: rgba(0,0,0,.58); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
   }
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
     --nx-god-op: .34; --nx-god-blend: multiply;
-    /* The two source crops are very different shapes — Venus is a narrow
-       standing portrait (166x340), Discobolus's extended throwing arm makes
-       his frame almost square (356x340). Sizing both from the same WIDTH
-       (like a plain watermark) makes Venus read tall and Discobolus read
-       squat. These two widths are tuned so their rendered HEIGHTS — the
-       dimension that actually reads as "figure size" in a vertical card —
-       come out close to each other instead. */
-    --nx-venus-w: 30%; --nx-disco-w: 46%;
+    /* Both crops are now a genuinely comparable "upper body" region (head to
+       just above the hip line for Venus; head + torso + full extended arm,
+       no legs, for Discobolus) — see gods.ts. They're still different
+       shapes though: Venus's crop is 237x340 (AR .697), Discobolus's is
+       427x340 (AR 1.256) because his extended arm widens the frame even
+       with the legs gone. These two widths are tuned from those exact
+       ratios (disco-w x .697/1.256 = venus-w) so their rendered HEIGHTS —
+       the dimension that actually reads as "figure size" in a vertical
+       card — come out equal instead of Venus dwarfing him or vice versa. */
+    --nx-venus-w: 24%; --nx-disco-w: 44%;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
@@ -78,10 +80,9 @@ export function widgetHtml(): string {
   #nexus-root::after {
     right: 0; width: var(--nx-disco-w);
     background-image: url("${DISCOBOLUS_DATA_URI}"); background-position: right bottom;
-    opacity: calc(var(--nx-god-op) * 1.2);  /* the discus throw reads smaller in-frame — boost to match Venus's presence */
   }
   @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
-  @media (max-width: 480px) { #nexus-root { --nx-venus-w: 20%; --nx-disco-w: 30%; } }
+  @media (max-width: 480px) { #nexus-root { --nx-venus-w: 16%; --nx-disco-w: 29%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
