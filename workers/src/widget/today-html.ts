@@ -27,7 +27,7 @@ export function widgetHtml(): string {
   :root {
     --nx-ink: #16181d; --nx-num: #16181d; --nx-mut: #6b7280; --nx-faint: #9aa0aa;
     --nx-accent: #1d2bb8; --nx-onacc: #ffffff;
-    --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.06);
+    --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.05); --nx-selbg: rgba(29,43,184,.10);
     --nx-track: rgba(0,0,0,.09); --nx-fieldline: rgba(0,0,0,.16);
     --nx-boxbg: rgba(0,0,0,.02); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
   }
@@ -35,7 +35,7 @@ export function widgetHtml(): string {
     :root {
       --nx-ink: #f2f3f5; --nx-num: #e9eaec; --nx-mut: #9096a0; --nx-faint: #6a6f78;
       --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
-      --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.10);
+      --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
       --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
       --nx-boxbg: rgba(255,255,255,.03); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
     }
@@ -43,32 +43,33 @@ export function widgetHtml(): string {
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
-    --nx-god-op: .12; --nx-god-h: 108%;
+    --nx-god-op: .12; --nx-god-h: 72%;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
-  /* Sculptures flank the card. ::before = Venus (left), ::after = Discobolus
-     (right). Full clean cutouts, grayscale (shadows read on light, highlights on
-     dark), each faded toward the center with a mask so they leave a gap and stay
-     off the text. */
+  /* Upper-body busts flank the card — ::before = Venus (left), ::after =
+     Discobolus (right). Grayscale (shadows read on light, highlights on dark),
+     anchored below the bottom edge so the crop's cut line is off-screen, and
+     each faded toward the center with a mask so they keep a clear gap and never
+     sit over the meal text. */
   #nexus-root::before, #nexus-root::after {
-    content: ""; position: absolute; top: 0; bottom: 0; width: 56%; z-index: 0;
+    content: ""; position: absolute; top: 0; bottom: 0; width: 52%; z-index: 0;
     pointer-events: none; background-repeat: no-repeat; opacity: var(--nx-god-op);
   }
   #nexus-root::before {
     left: 0; background-image: url("${VENUS_DATA_URI}");
-    background-position: left -22px bottom -8px; background-size: auto var(--nx-god-h);
-    -webkit-mask-image: linear-gradient(to right, #000 6%, transparent 66%);
-    mask-image: linear-gradient(to right, #000 6%, transparent 66%);
+    background-position: left -12px bottom -34px; background-size: auto var(--nx-god-h);
+    -webkit-mask-image: linear-gradient(to right, #000 2%, transparent 58%);
+    mask-image: linear-gradient(to right, #000 2%, transparent 58%);
   }
   #nexus-root::after {
     right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
-    background-position: right -26px bottom -8px; background-size: auto var(--nx-god-h);
-    -webkit-mask-image: linear-gradient(to left, #000 6%, transparent 66%);
-    mask-image: linear-gradient(to left, #000 6%, transparent 66%);
+    background-position: right -16px bottom -34px; background-size: auto var(--nx-god-h);
+    -webkit-mask-image: linear-gradient(to left, #000 2%, transparent 58%);
+    mask-image: linear-gradient(to left, #000 2%, transparent 58%);
   }
   @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .17; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-op: .09; --nx-god-h: 88%; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-op: .09; --nx-god-h: 58%; } }
   @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .13; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
@@ -95,21 +96,23 @@ export function widgetHtml(): string {
 
   /* Two encased boxes: meal list + editor */
   .nx-box { border: 1px solid var(--nx-line); border-radius: 14px; background: var(--nx-boxbg); margin-bottom: 12px; }
-  .nx-box.list { padding: 2px 16px 6px; }
+  .nx-box.list { padding: 6px 8px 8px; }
   .nx-box.editor { padding: 16px; }
 
-  table.nx-tbl { width: 100%; border-collapse: collapse; }
-  .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 10px 0 8px; font-variant-numeric: tabular-nums; }
-  .nx-tbl thead th.l { text-align: left; }
-  .nx-tbl tbody td { padding: 12px 0; border-top: 1px solid var(--nx-line); font-size: 15px; font-weight: 400; vertical-align: middle; line-height: 1.25; }
-  .nx-tbl tbody tr:first-child td { border-top: 0; }
-  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-num); width: 4rem; white-space: nowrap; padding-left: 14px; }
-  .nx-tbl td.nm { color: var(--nx-ink); padding-right: 8px; }
+  table.nx-tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 6px 12px 8px 0; font-variant-numeric: tabular-nums; }
+  .nx-tbl thead th.l { text-align: left; padding-left: 12px; }
+  .nx-tbl tbody td { padding: 12px 0; font-size: 15px; font-weight: 400; vertical-align: middle; line-height: 1.25; }
+  .nx-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--nx-num); width: 4rem; white-space: nowrap; padding-right: 12px; }
+  .nx-tbl td.nm { color: var(--nx-ink); padding-left: 12px; }
+  /* Rows become clean rounded pills on hover / when selected — no hard-cornered
+     rectangle, no left accent bar. Same radius in both states. */
   tr.nx-tap { cursor: pointer; }
   tr.nx-tap:hover td { background: var(--nx-hover); }
-  tr.nx-sel td { background: var(--nx-hover); }
-  tr.nx-sel td.nm { box-shadow: inset 3px 0 0 var(--nx-accent); padding-left: 10px; border-radius: 2px; }
-  .nx-empty { color: var(--nx-faint); font-size: 14px; padding: 18px 4px; }
+  tr.nx-sel td { background: var(--nx-selbg); }
+  tr.nx-tap:hover td:first-child, tr.nx-sel td:first-child { border-top-left-radius: 11px; border-bottom-left-radius: 11px; }
+  tr.nx-tap:hover td:last-child, tr.nx-sel td:last-child { border-top-right-radius: 11px; border-bottom-right-radius: 11px; }
+  .nx-empty { color: var(--nx-faint); font-size: 14px; padding: 12px; }
 
   .nx-name { width: 100%; padding: 10px 12px; font-size: 15px; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; margin-bottom: 12px; }
   .nx-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
