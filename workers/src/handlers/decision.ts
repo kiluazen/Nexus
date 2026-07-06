@@ -1,16 +1,22 @@
 import type { NexusEnv } from "../types";
-import { sendLoginCode, verifyLoginCode, displayNameFromEmail } from "../instant";
+import { displayNameFromEmail } from "../instant";
+import { signInWithPassword, signUpWithPassword, AuthError } from "../auth/password";
 import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
 import { loadParsedAuthRequest } from "./authorize";
 
+// The consent page signs in with email + password (or Google, handled in
+// auth/google.ts). Password is the credential we hand OpenAI reviewers: it
+// logs in immediately with no email code, no verification step. Magic codes
+// still exist for the CLI on /api/v1/auth/* — just not on this page.
 interface DecisionBody {
   nonce: string;
-  action: "request_code" | "approve" | "deny";
+  action: "signin" | "signup" | "deny";
   email?: string;
-  code?: string;
+  password?: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ACTIONS = ["signin", "signup", "deny"];
 
 export async function handleDecision(req: Request, env: NexusEnv): Promise<Response> {
   if (req.method !== "POST") {
@@ -23,12 +29,12 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  if (!body.nonce || !["request_code", "approve", "deny"].includes(body.action)) {
+  if (!body.nonce || !ACTIONS.includes(body.action)) {
     return Response.json({ error: "missing_nonce_or_action" }, { status: 400 });
   }
 
-  // Peek on every action: a mistyped code must NOT burn the consent stash.
-  // The stash is deleted only on deny or after the code verifies.
+  // Peek (don't consume): a wrong password must not burn the consent stash, so
+  // the user can retry. It's deleted only on deny or a successful sign-in.
   const parsed = await loadParsedAuthRequest(env, body.nonce, { consume: false });
   if (!parsed) {
     return Response.json(
@@ -49,46 +55,37 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
   if (!EMAIL_RE.test(email)) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
-
-  if (body.action === "request_code") {
-    // Same 60s-per-email throttle as the CLI path, so a replayed nonce can't
-    // email-bomb an address from the consent page.
-    const rlKey = `rl:code:${email}`;
-    if (await env.NEXUS_CACHE.get(rlKey)) {
-      return Response.json({ error: "Hang on a moment before requesting another code." }, { status: 429 });
-    }
-    await env.NEXUS_CACHE.put(rlKey, "1", { expirationTtl: 60 });
-    try {
-      await sendLoginCode(env, email);
-    } catch (e) {
-      console.error("sendMagicCode failed", e);
-      return Response.json({ error: "Could not send the code. Try again." }, { status: 502 });
-    }
-    return Response.json({ sent: true });
+  const password = body.password ?? "";
+  if (!password) {
+    return Response.json({ error: "Enter your password." }, { status: 400 });
   }
 
-  // approve: verifying the magic code IS the sign-in.
-  const code = (body.code ?? "").trim();
-  if (!/^\d{6}$/.test(code)) {
-    return Response.json({ error: "Enter the 6-digit code from your email." }, { status: 400 });
-  }
+  // Reuse the magic-code brute-force lock (keyed by email) for password tries.
   if (await isCodeLocked(env, email)) {
     return Response.json(
-      { error: "Too many wrong codes. Request a new one and try again." },
+      { error: "Too many attempts. Wait a minute and try again." },
       { status: 429 },
     );
   }
 
   let login;
   try {
-    login = await verifyLoginCode(env, email, code);
+    login =
+      body.action === "signup"
+        ? await signUpWithPassword(env, email, password)
+        : await signInWithPassword(env, email, password);
   } catch (e) {
-    console.error("checkMagicCode failed", e);
-    await recordCodeFailure(env, email);
-    return Response.json(
-      { error: "That code didn't match. Check your email and try again." },
-      { status: 401 },
-    );
+    if (e instanceof AuthError) {
+      // Only credential failures count toward the lock; "exists"/"weak" are
+      // user-fixable form errors, not guessing attempts.
+      if (e.code === "bad_password" || e.code === "no_account" || e.code === "no_password") {
+        await recordCodeFailure(env, email);
+      }
+      const status = e.code === "exists" ? 409 : e.code === "weak" ? 400 : 401;
+      return Response.json({ error: e.message, code: e.code }, { status });
+    }
+    console.error("password auth failed", e);
+    return Response.json({ error: "Something went wrong. Try again." }, { status: 500 });
   }
 
   await clearCodeFailures(env, email);
@@ -106,7 +103,7 @@ export async function handleDecision(req: Request, env: NexusEnv): Promise<Respo
     scope: parsed.scope,
     props,
     metadata: {
-      signed_in_via: "instantdb_magic_code",
+      signed_in_via: `password_${body.action}`,
       issued_at: Date.now(),
     },
   });

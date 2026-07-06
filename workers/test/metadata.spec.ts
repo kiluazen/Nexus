@@ -3,6 +3,8 @@ import { handleProtectedResource } from "../src/handlers/protected-resource";
 import { computeMealTotals, parseEntry, parseEntryInput, entryInputToStorage } from "../src/schema/entry-shapes";
 import { parseDate, ValidationError } from "../src/lib/dates";
 import { widgetHtml } from "../src/widget/today-html";
+import { consentHtml } from "../src/auth/consent-html";
+import { hashPassword, verifyPassword } from "../src/auth/password";
 import type { NexusEnv } from "../src/types";
 
 const env = { BASE_URL: "https://mcp.nexus.kushalsm.com" } as NexusEnv;
@@ -41,6 +43,27 @@ describe("submission metadata", () => {
     // new Function only PARSES the body; a syntax error (e.g. an unterminated
     // string) throws here, undefined runtime globals (window, instant) do not.
     expect(() => new Function(script as string)).not.toThrow();
+  });
+
+  it("consent page inline script parses, with and without the Google button", () => {
+    for (const googleEnabled of [true, false]) {
+      const html = consentHtml({ nonce: "n-1", clientName: "ChatGPT", googleEnabled });
+      const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+      expect(script && script.length).toBeTruthy();
+      expect(() => new Function(script as string)).not.toThrow();
+      // The Google button only exists when configured.
+      expect(html.includes('id="google"')).toBe(googleEnabled);
+    }
+  });
+
+  it("hashes a password and verifies it (PBKDF2 round-trip, wrong password fails)", async () => {
+    const hash = await hashPassword("correct horse battery");
+    expect(hash.startsWith("pbkdf2$")).toBe(true);
+    expect(await verifyPassword("correct horse battery", hash)).toBe(true);
+    expect(await verifyPassword("wrong password", hash)).toBe(false);
+    // A second hash of the same password uses a fresh salt, so it differs.
+    const hash2 = await hashPassword("correct horse battery");
+    expect(hash2).not.toBe(hash);
   });
 
   it("accepts a flat meal, defaults missing macros, and maps to storage", () => {

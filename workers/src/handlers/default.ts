@@ -1,6 +1,7 @@
 import type { NexusEnv } from "../types";
 import { handleAuthorize } from "./authorize";
 import { handleDecision } from "./decision";
+import { handleGoogleStart, handleGoogleCallback } from "../auth/google";
 import { handleProtectedResource } from "./protected-resource";
 import { sendLoginCode, verifyLoginCode, revokeToken } from "../instant";
 import { isCodeLocked, recordCodeFailure, clearCodeFailures } from "../lib/attempts";
@@ -34,6 +35,13 @@ export default {
     }
     if (path === "/oauth/decision") {
       return handleDecision(req, env);
+    }
+    // "Sign in with Google" from the consent page: start -> Google -> callback.
+    if (path === "/auth/google/start") {
+      return handleGoogleStart(req, env);
+    }
+    if (path === "/auth/google/callback") {
+      return handleGoogleCallback(req, env);
     }
 
     // Unauthenticated CLI/agent login: email magic code in, InstantDB

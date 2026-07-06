@@ -12,6 +12,9 @@ const _schema = i.schema({
       email: i.string().unique().indexed(),
       friend_code: i.string().unique().indexed().optional(), // "NEXUS-R3M8"
       created_at: i.date().indexed().optional(),
+      // PBKDF2 hash for email+password sign-in. Optional: magic-code-only and
+      // Google users never set it. Only ever written/read server-side.
+      password_hash: i.string().optional(),
     }),
 
     // One workout / meal / body-weight row. Scalar fields are indexed for

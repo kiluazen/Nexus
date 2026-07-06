@@ -2,6 +2,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { NexusEnv, NexusProps } from "./types";
 import { LogInput, HistoryInput, UpdateInput, FriendsInput } from "./schema/tool-inputs";
+import { LogOutput, HistoryOutput, UpdateOutput, FriendsOutput } from "./schema/tool-outputs";
 import { logEntries, getHistory, updateEntry, type UserCtx } from "./data/entries";
 import { manageFriends } from "./data/friends";
 import { mintWidgetToken } from "./instant";
@@ -106,10 +107,6 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
     };
   }
 
-  private textResult(payload: unknown) {
-    return { content: [{ type: "text" as const, text: JSON.stringify(payload) }] };
-  }
-
   // Data-only result: the model gets structured data to answer from, but NO
   // widget renders. Used for reads so an informational question ("what's my
   // total?") returns a text answer instead of the editable card.
@@ -153,6 +150,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "A weight is: {\"type\":\"weight\",\"weight_kg\":74.5}. " +
           "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,
+        outputSchema: LogOutput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         _meta: {
           "openai/outputTemplate": WIDGET_URI,
@@ -182,6 +180,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         description:
           "Use this when the user asks what they ate, what workouts they did, their weight trend, calories, macros, protein, progress on an exercise, or wants a summary of any past day or date range. Also call it before logging when a duplicate entry seems possible. Do not use for general nutrition knowledge or workout advice.",
         inputSchema: HistoryInput.shape,
+        outputSchema: HistoryOutput.shape,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
         // No outputTemplate on purpose: reads answer in text, they don't render
         // the editable card. The card is for logging/correcting, not for
@@ -204,11 +203,12 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         description:
           "Use this when the user corrects or amends something already logged: fixing reps or weight, adding a set, changing meal items or macros, or adjusting a body-weight reading. Requires the entry id from nexus_get_history or a prior log result. The new data fully replaces the old entry.",
         inputSchema: UpdateInput.shape,
+        outputSchema: UpdateOutput.shape,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => updateEntry(this.env, this.user(), args));
-        return r.ok ? this.textResult(r.value) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
 
@@ -219,13 +219,14 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         description:
           "Use this when the user wants to see their Nexus friends or friend code, add a friend by code (NEXUS-XXXX), or accept, reject, or remove a friend by email. Friends can view each other's fitness history via nexus_get_history with friend_id.",
         inputSchema: FriendsInput.shape,
+        outputSchema: FriendsOutput.shape,
         // Not read-only (add/accept/remove mutate) and not open-world: it only
         // touches this app's own data, never a third-party service.
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, this.user(), args));
-        return r.ok ? this.textResult(r.value) : errorResult(r.error);
+        return r.ok ? this.dataResult(r.value) : errorResult(r.error);
       },
     );
   }
