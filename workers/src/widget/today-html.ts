@@ -43,35 +43,37 @@ export function widgetHtml(): string {
   * { box-sizing: border-box; }
   #nexus-root {
     position: relative; overflow: hidden;
-    --nx-god-op: .085; --nx-god-h: 68%;
+    --nx-god-op: .34; --nx-god-h: 68%; --nx-god-blend: multiply;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--nx-ink); background: transparent; padding: 20px 22px;
   }
   /* Upper-body busts flank the card — ::before = Venus (left), ::after =
-     Discobolus (right). Grayscale (shadows read on light, highlights on dark),
-     anchored below the bottom edge so the crop's cut line is off-screen, and
-     each faded toward the center with a mask so they keep a clear gap and never
-     sit over the meal text. */
+     Discobolus (right). Blended against the card surface rather than just
+     faded (multiply on light: shadows read as ink against paper; screen on
+     dark: highlights glow off the dark surface) so they read as carved marble
+     instead of a flat gray watermark. Anchored below the bottom edge so the
+     crop's cut line is off-screen, and each faded toward the center with a
+     mask so they keep a clear gap and never sit over the meal text. */
   #nexus-root::before, #nexus-root::after {
     content: ""; position: absolute; top: 0; bottom: 0; width: 52%; z-index: 0;
     pointer-events: none; background-repeat: no-repeat; opacity: var(--nx-god-op);
+    mix-blend-mode: var(--nx-god-blend);
   }
   #nexus-root::before {
     left: 0; background-image: url("${VENUS_DATA_URI}");
     background-position: left -6px bottom -30px; background-size: auto var(--nx-god-h);
-    opacity: calc(var(--nx-god-op) * 1.25);  /* Venus is light marble — small boost so she reads */
     -webkit-mask-image: linear-gradient(to right, #000 14%, transparent 80%);
     mask-image: linear-gradient(to right, #000 14%, transparent 80%);
   }
   #nexus-root::after {
     right: 0; background-image: url("${DISCOBOLUS_DATA_URI}");
     background-position: right -14px bottom -30px; background-size: auto var(--nx-god-h);
+    opacity: calc(var(--nx-god-op) * 1.2);  /* the discus throw reads smaller in-frame — boost to match Venus's presence */
     -webkit-mask-image: linear-gradient(to left, #000 6%, transparent 56%);
     mask-image: linear-gradient(to left, #000 6%, transparent 56%);
   }
-  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .12; } }
-  @media (max-width: 480px) { #nexus-root { --nx-god-op: .07; --nx-god-h: 56%; } }
-  @media (prefers-color-scheme: dark) and (max-width: 480px) { #nexus-root { --nx-god-op: .095; } }
+  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
+  @media (max-width: 480px) { #nexus-root { --nx-god-h: 56%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
