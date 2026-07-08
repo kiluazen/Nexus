@@ -16,7 +16,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v3.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v4.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -330,7 +330,7 @@ export function widgetHtml(): string {
       h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>kcal</th><th>protein</th></tr></thead><tbody>';
       meals.forEach(function (m) {
         var mt = m.totals || {};
-        var sel = String(m.id) === String(showId);
+        var sel = !editorClosed && String(m.id) === String(showId);
         h += '<tr class="nx-tap' + (sel ? " nx-sel" : "") + '" data-select="' + esc(m.id) + '">' +
           '<td class="nm">' + esc(mealName(m)) + '</td>' +
           '<td class="num">' + n(mt.calories) + '</td>' +
