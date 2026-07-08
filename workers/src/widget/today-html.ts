@@ -16,7 +16,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v2.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v3.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -176,6 +176,11 @@ export function widgetHtml(): string {
 <script>
 (function () {
   var GOAL_KCAL = ${DEFAULT_GOAL_KCAL}, GOAL_PROTEIN = ${DEFAULT_GOAL_PROTEIN};
+  // Icon markup, injected as browser-side string literals (these are build-time
+  // module consts — they must be baked into the script, not referenced by name).
+  var FLAME_SVG = ${JSON.stringify(FLAME_SVG)};
+  var DUMBBELL_SVG = ${JSON.stringify(DUMBBELL_SVG)};
+  var X_SVG = ${JSON.stringify(X_SVG)};
   var root = document.getElementById("nexus-root");
   var live = false;
   var db = null;
