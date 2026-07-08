@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.skybridge/
+.env
+.DS_Store
+
+dev.log
+*.tsbuildinfo

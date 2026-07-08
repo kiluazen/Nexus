@@ -24,6 +24,17 @@ export const WIDGET_URI = "ui://widget/nexus-today-v2.html";
 const DEFAULT_GOAL_KCAL = 2100;
 const DEFAULT_GOAL_PROTEIN = 120;
 
+// Inline lucide icons (stroke = currentColor) so the Food/Workout toggle reads
+// as a flame (calories) + dumbbell, and the editor gets a corner close. Same
+// icon set as the Skybridge trial so both look identical.
+const ICON_ATTRS =
+  'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const FLAME_SVG =
+  '<svg ' + ICON_ATTRS + '><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>';
+const DUMBBELL_SVG =
+  '<svg ' + ICON_ATTRS + '><path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/></svg>';
+const X_SVG = '<svg ' + ICON_ATTRS + '><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
 export function widgetHtml(): string {
   return `<div id="nexus-root"></div>
 <style>
@@ -33,6 +44,7 @@ export function widgetHtml(): string {
     --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.05); --nx-selbg: rgba(29,43,184,.10);
     --nx-track: rgba(0,0,0,.09); --nx-fieldline: rgba(0,0,0,.16);
     --nx-boxbg: rgba(0,0,0,.028); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
+    --nx-chipbg: rgba(255,255,255,.92);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -45,6 +57,7 @@ export function widgetHtml(): string {
          brightening "screen" blend, so the box needs to dim what's behind
          it, not lighten it, or the CARBS/FAT labels wash out. */
       --nx-boxbg: rgba(0,0,0,.58); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      --nx-chipbg: rgba(32,34,40,.94);
     }
   }
   * { box-sizing: border-box; }
@@ -91,8 +104,10 @@ export function widgetHtml(): string {
   .nx-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   .nx-date { font-size: 13px; font-weight: 500; color: var(--nx-mut); }
   .nx-seg { display: inline-flex; background: var(--nx-seg); border-radius: 8px; padding: 2px; }
-  .nx-seg button { border: 0; background: transparent; color: var(--nx-mut); font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
-  .nx-seg button.on { background: var(--nx-segon); color: var(--nx-ink); }
+  .nx-seg button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--nx-mut); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  .nx-seg button svg { width: 16px; height: 16px; display: block; }
+  .nx-seg button:hover { color: var(--nx-ink); }
+  .nx-seg button.on { background: var(--nx-segon); color: var(--nx-accent); }
 
   /* Progress: calorie ring + macro rows on wide (laptop) widths; both goals
      as rings side by side on narrow (phone) widths — swapped by media query,
@@ -123,7 +138,7 @@ export function widgetHtml(): string {
   /* Two encased boxes: meal list + editor */
   .nx-box { border: 1px solid var(--nx-line); border-radius: 14px; background: var(--nx-boxbg); margin-bottom: 12px; }
   .nx-box.list { padding: 6px 8px 8px; }
-  .nx-box.editor { padding: 16px; }
+  .nx-box.editor { padding: 46px 16px 16px; position: relative; }
 
   table.nx-tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
   .nx-tbl thead th { font-size: 12px; font-weight: 400; color: var(--nx-faint); text-align: right; padding: 6px 12px 8px 0; font-variant-numeric: tabular-nums; }
@@ -150,6 +165,11 @@ export function widgetHtml(): string {
   .nx-save { padding: 9px 24px; font-size: 14px; font-weight: 600; border-radius: 10px; border: 0; cursor: pointer; background: var(--nx-accent); color: var(--nx-onacc); }
   .nx-save:disabled { opacity: .5; cursor: default; }
   .nx-err { color: #e5695f; font-size: 12px; margin-top: 9px; }
+  /* Editor close — a plain X in the header gap at the box's top-right (the
+     extra top padding on .nx-box.editor opens the space). No chip, no popup. */
+  .nx-editor-x { position: absolute; top: 12px; right: 12px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--nx-faint); cursor: pointer; }
+  .nx-editor-x svg { width: 16px; height: 16px; display: block; }
+  .nx-editor-x:hover { color: var(--nx-ink); background: var(--nx-hover); }
 </style>
 <script>
 (function () {
@@ -161,6 +181,7 @@ export function widgetHtml(): string {
   var currentData = null;
   var saveError = "";
   var view = "food";
+  var editorClosed = false;
 
   function fmtDate(d) {
     try {
@@ -215,6 +236,7 @@ export function widgetHtml(): string {
     var id = m.id, t = m.totals || {};
     var firstName = (m.items && m.items[0] && m.items[0].name) || m.meal_type || "";
     var h = '<div class="nx-box editor">';
+    h += '<button class="nx-editor-x" data-close="1" aria-label="Close editor" title="Close">' + X_SVG + '</button>';
     h += '<input class="nx-name" id="nx-name-' + esc(id) + '" value="' + esc(firstName) + '" placeholder="What was it?"/>';
     h += '<div class="nx-macros">';
     h += macroInput("nx-kcal-" + esc(id), "kcal", t.calories);
@@ -249,8 +271,8 @@ export function widgetHtml(): string {
     var h = '<div class="nx-top"><span class="nx-date">' + esc(title) + "</span>";
     if (both) {
       h += '<span class="nx-seg">' +
-        '<button data-view="food"' + (view === "food" ? ' class="on"' : "") + ">Food</button>" +
-        '<button data-view="workout"' + (view === "workout" ? ' class="on"' : "") + ">Workout</button></span>";
+        '<button data-view="food" aria-label="Food" title="Food"' + (view === "food" ? ' class="on"' : "") + ">" + FLAME_SVG + "</button>" +
+        '<button data-view="workout" aria-label="Workout" title="Workout"' + (view === "workout" ? ' class="on"' : "") + ">" + DUMBBELL_SVG + "</button></span>";
     }
     h += "</div>";
 
@@ -309,7 +331,7 @@ export function widgetHtml(): string {
       });
       h += "</tbody></table></div>";
       var selMeal = findMeal(showId) || meals[0];
-      if (selMeal) h += editorBox(selMeal);
+      if (selMeal && !editorClosed) h += editorBox(selMeal);
     } else if (!workouts.length && !weights.length) {
       h += '<div class="nx-box list"><div class="nx-empty">Nothing logged yet' + (single ? " today" : "") + ". Tell ChatGPT what you ate.</div></div>";
     }
@@ -367,8 +389,9 @@ export function widgetHtml(): string {
   root.addEventListener("click", function (e) {
     var t = e.target, c = t.closest ? function (s) { return t.closest(s); } : function () { return null; };
     var save = c("[data-save]"); if (save) { e.preventDefault(); saveMeal(save.getAttribute("data-save")); return; }
+    var close = c("[data-close]"); if (close) { e.preventDefault(); editorClosed = true; saveError = ""; render(currentData); return; }
     var vw = c("[data-view]"); if (vw) { view = vw.getAttribute("data-view"); saveError = ""; render(currentData); return; }
-    var sel = c("[data-select]"); if (sel) { selectedId = sel.getAttribute("data-select"); saveError = ""; render(currentData); }
+    var sel = c("[data-select]"); if (sel) { selectedId = sel.getAttribute("data-select"); editorClosed = false; saveError = ""; render(currentData); }
   });
 
   function initialState(out) {

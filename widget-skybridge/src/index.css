@@ -1,0 +1,437 @@
+/* Nexus day card — ported from workers/src/widget/today-html.ts to a React
+   view. Same cobalt accent, transparent card, light/dark via prefers-color-
+   scheme. New here: the icon-based Food/Workout toggle and the editor X-close. */
+
+/* Light is the base. The host theme (via data-theme on .nx-root) wins; when the
+   host doesn't specify one, OS prefers-color-scheme decides. */
+.nx-root,
+.nx-root[data-theme="light"] {
+  --nx-ink: #16181d;
+  --nx-num: #16181d;
+  --nx-mut: #6b7280;
+  --nx-faint: #9aa0aa;
+  --nx-accent: #1d2bb8;
+  --nx-onacc: #ffffff;
+  --nx-line: rgba(0, 0, 0, 0.09);
+  --nx-hover: rgba(29, 43, 184, 0.05);
+  --nx-selbg: rgba(29, 43, 184, 0.1);
+  --nx-track: rgba(0, 0, 0, 0.09);
+  --nx-fieldline: rgba(0, 0, 0, 0.16);
+  --nx-boxbg: rgba(0, 0, 0, 0.028);
+  --nx-seg: rgba(0, 0, 0, 0.05);
+  --nx-segon: rgba(0, 0, 0, 0.1);
+  --nx-chipbg: rgba(255, 255, 255, 0.92);
+}
+
+/* Dark tokens — shared by the explicit host-dark selector and the OS fallback. */
+.nx-root[data-theme="dark"] {
+  --nx-ink: #f2f3f5;
+  --nx-num: #e9eaec;
+  --nx-mut: #9096a0;
+  --nx-faint: #6a6f78;
+  --nx-accent: #8ea0ff;
+  --nx-onacc: #0a1030;
+  --nx-line: rgba(255, 255, 255, 0.08);
+  --nx-hover: rgba(142, 160, 255, 0.09);
+  --nx-selbg: rgba(142, 160, 255, 0.18);
+  --nx-track: rgba(255, 255, 255, 0.12);
+  --nx-fieldline: rgba(255, 255, 255, 0.16);
+  --nx-boxbg: rgba(0, 0, 0, 0.35);
+  --nx-seg: rgba(255, 255, 255, 0.06);
+  --nx-segon: rgba(255, 255, 255, 0.13);
+  --nx-chipbg: rgba(32, 34, 40, 0.94);
+}
+@media (prefers-color-scheme: dark) {
+  .nx-root:not([data-theme="light"]) {
+    --nx-ink: #f2f3f5;
+    --nx-num: #e9eaec;
+    --nx-mut: #9096a0;
+    --nx-faint: #6a6f78;
+    --nx-accent: #8ea0ff;
+    --nx-onacc: #0a1030;
+    --nx-line: rgba(255, 255, 255, 0.08);
+    --nx-hover: rgba(142, 160, 255, 0.09);
+    --nx-selbg: rgba(142, 160, 255, 0.18);
+    --nx-track: rgba(255, 255, 255, 0.12);
+    --nx-fieldline: rgba(255, 255, 255, 0.16);
+    --nx-boxbg: rgba(0, 0, 0, 0.35);
+    --nx-seg: rgba(255, 255, 255, 0.06);
+    --nx-segon: rgba(255, 255, 255, 0.13);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.nx-root {
+  position: relative;
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--nx-ink);
+  background: transparent;
+  padding: 20px 22px;
+  /* Marble-bust watermark tuning — widths set so both figures render at equal
+     rendered HEIGHT despite different crop aspect ratios (see gods.ts). */
+  --nx-god-op: 0.34;
+  --nx-god-blend: multiply;
+  --nx-venus-w: 24%;
+  --nx-disco-w: 44%;
+}
+/* ::before = Venus (left), ::after = Discobolus (right). background-size:contain
+   so the whole trimmed figure fits at any card size. Blended against the card
+   surface (multiply on light, screen on dark) so they read as carved marble. */
+.nx-root::before,
+.nx-root::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 92%;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: var(--nx-god-op);
+  mix-blend-mode: var(--nx-god-blend);
+}
+.nx-root::before {
+  left: 0;
+  width: var(--nx-venus-w);
+  background-image: var(--nx-venus-img);
+  background-position: left bottom;
+}
+.nx-root::after {
+  right: 0;
+  width: var(--nx-disco-w);
+  background-image: var(--nx-disco-img);
+  background-position: right bottom;
+}
+.nx-root[data-theme="dark"] {
+  --nx-god-op: 0.4;
+  --nx-god-blend: screen;
+}
+@media (prefers-color-scheme: dark) {
+  .nx-root:not([data-theme="light"]) {
+    --nx-god-op: 0.4;
+    --nx-god-blend: screen;
+  }
+}
+@media (max-width: 480px) {
+  .nx-root {
+    --nx-venus-w: 32%;
+    --nx-disco-w: 58%;
+  }
+}
+/* Keep all real content above the watermark. */
+.nx-root > * {
+  position: relative;
+  z-index: 1;
+}
+
+.nx-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.nx-date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--nx-mut);
+}
+
+/* Change 1: icon toggle — flame (calories/food) + dumbbell (workout) */
+.nx-seg {
+  display: inline-flex;
+  background: var(--nx-seg);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+.nx-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--nx-mut);
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nx-seg button:hover {
+  color: var(--nx-ink);
+}
+.nx-seg button.on {
+  background: var(--nx-segon);
+  color: var(--nx-accent);
+}
+
+.nx-prog-wide {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 18px;
+}
+/* Phone layout: twin rings (calories + protein), hidden on wide widths. */
+.nx-prog-narrow {
+  display: none;
+}
+@media (max-width: 480px) {
+  .nx-prog-wide {
+    display: none;
+  }
+  .nx-prog-narrow {
+    display: block;
+    margin-bottom: 18px;
+  }
+  .nx-rings-row {
+    display: flex;
+    justify-content: space-around;
+    gap: 12px;
+  }
+  .nx-rings-row .nx-ring {
+    width: 96px;
+    height: 96px;
+  }
+  .nx-rings-row .nx-ring text.big {
+    font-size: 17px;
+  }
+  .nx-ring-cap {
+    text-align: center;
+    font-size: 11px;
+    color: var(--nx-mut);
+    margin-top: 4px;
+  }
+}
+.nx-ring {
+  flex: 0 0 auto;
+}
+.nx-ring circle.trk {
+  stroke: var(--nx-track);
+}
+.nx-ring circle.val {
+  stroke: var(--nx-accent);
+  transition: stroke-dashoffset 0.5s ease;
+}
+.nx-ring text.big {
+  fill: var(--nx-num);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.nx-ring text.sm {
+  fill: var(--nx-faint);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.nx-macros2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.nx-m2-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.nx-m2 .lbl {
+  font-size: 12.5px;
+  color: var(--nx-mut);
+}
+.nx-m2 .val {
+  font-size: 14px;
+  color: var(--nx-num);
+  font-variant-numeric: tabular-nums;
+}
+.nx-m2 .val b {
+  font-weight: 600;
+}
+.nx-bar {
+  height: 5px;
+  background: var(--nx-track);
+  border-radius: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.nx-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--nx-accent);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.nx-box {
+  border: 1px solid var(--nx-line);
+  border-radius: 14px;
+  background: var(--nx-boxbg);
+  margin-bottom: 12px;
+}
+.nx-box.list {
+  padding: 6px 8px 8px;
+}
+.nx-box.editor {
+  /* Extra top padding opens a header strip between the box edge and the name
+     field — the close X lives in that gap, top-right. */
+  padding: 46px 16px 16px;
+  position: relative;
+}
+
+table.nx-tbl {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.nx-tbl thead th {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--nx-faint);
+  text-align: right;
+  padding: 6px 12px 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+.nx-tbl thead th.l {
+  text-align: left;
+  padding-left: 12px;
+}
+.nx-tbl tbody td {
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: 400;
+  vertical-align: middle;
+  line-height: 1.25;
+}
+.nx-tbl td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--nx-num);
+  width: 4rem;
+  white-space: nowrap;
+  padding-right: 12px;
+}
+.nx-tbl td.nm {
+  color: var(--nx-ink);
+  padding-left: 12px;
+}
+tr.nx-tap {
+  cursor: pointer;
+}
+tr.nx-tap:hover td {
+  background: var(--nx-hover);
+}
+tr.nx-sel td {
+  background: var(--nx-selbg);
+}
+tr.nx-tap:hover td:first-child,
+tr.nx-sel td:first-child {
+  border-top-left-radius: 11px;
+  border-bottom-left-radius: 11px;
+}
+tr.nx-tap:hover td:last-child,
+tr.nx-sel td:last-child {
+  border-top-right-radius: 11px;
+  border-bottom-right-radius: 11px;
+}
+.nx-empty {
+  color: var(--nx-faint);
+  font-size: 14px;
+  padding: 12px;
+}
+
+.nx-name {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: var(--nx-ink);
+  background: transparent;
+  border: 1px solid var(--nx-fieldline);
+  border-radius: 10px;
+  outline: none;
+  margin-bottom: 12px;
+}
+.nx-macros {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.nx-macro {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.nx-macro span {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--nx-faint);
+}
+.nx-macro input {
+  width: 100%;
+  padding: 9px 10px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--nx-ink);
+  background: transparent;
+  border: 1px solid var(--nx-fieldline);
+  border-radius: 10px;
+  outline: none;
+}
+.nx-macro input:focus,
+.nx-name:focus {
+  border-color: var(--nx-accent);
+}
+.nx-btns {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.nx-save {
+  padding: 9px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 0;
+  cursor: pointer;
+  background: var(--nx-accent);
+  color: var(--nx-onacc);
+}
+.nx-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.nx-err {
+  color: #e5695f;
+  font-size: 12px;
+  margin-top: 9px;
+}
+
+/* Change 2: X-close — a plain icon sitting in the header gap at the box's
+   top-right. No chip, no popup; just the X in the opened space. */
+.nx-editor-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nx-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nx-editor-x:hover {
+  color: var(--nx-ink);
+  background: var(--nx-hover);
+}
