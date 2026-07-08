@@ -382,6 +382,14 @@ tr.nx-sel td:last-child {
   border: 1px solid var(--nx-fieldline);
   border-radius: 10px;
   outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+/* No spinner arrows — the values are typed. */
+.nx-macro input::-webkit-outer-spin-button,
+.nx-macro input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .nx-macro input:focus,
 .nx-name:focus {

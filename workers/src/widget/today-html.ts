@@ -159,7 +159,9 @@ export function widgetHtml(): string {
   .nx-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .nx-macro { display: flex; flex-direction: column; gap: 5px; }
   .nx-macro span { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--nx-faint); }
-  .nx-macro input { width: 100%; padding: 9px 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; }
+  .nx-macro input { width: 100%; padding: 9px 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 10px; outline: none; -moz-appearance: textfield; appearance: textfield; }
+  /* No spinner arrows — the values are typed. */
+  .nx-macro input::-webkit-outer-spin-button, .nx-macro input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .nx-macro input:focus, .nx-name:focus { border-color: var(--nx-accent); }
   .nx-btns { display: flex; justify-content: flex-end; margin-top: 14px; }
   .nx-save { padding: 9px 24px; font-size: 14px; font-weight: 600; border-radius: 10px; border: 0; cursor: pointer; background: var(--nx-accent); color: var(--nx-onacc); }
