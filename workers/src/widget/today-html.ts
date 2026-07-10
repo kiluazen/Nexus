@@ -3,10 +3,13 @@
 // Calorie-first, goal-aware: a progress ring shows the day's kcal against a
 // daily target, protein against its own target, carbs/fat read out beside it.
 // Below, two separately-encased boxes make the structure self-evident without
-// labels: the meal list (tap a row) and one constant editor that reflects
+// labels: the list (tap a row) and one constant editor that reflects
 // whatever's selected. Workouts get their own view, auto-selected on workout
-// logs. Accent is the landing cobalt; card background is transparent so it
-// matches ChatGPT's own light/dark surface.
+// logs, with a Strong-style set editor: per-set kg/reps steppers (±2.5kg /
+// ±1 rep), add-set-copies-last, a "last time" ghost line from the payload's
+// `previous`, and a PR chip when a set beats the historical best. Accent is
+// the landing cobalt; card background is transparent so it matches ChatGPT's
+// own light/dark surface.
 //
 // Venus (left) + Discobolus (right) flank the card as a faint, theme-adaptive
 // watermark, each faded toward the center with a CSS mask so they leave a clear
@@ -16,7 +19,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v4.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v5.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -172,6 +175,34 @@ export function widgetHtml(): string {
   .nx-editor-x { position: absolute; top: 12px; right: 12px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--nx-faint); cursor: pointer; }
   .nx-editor-x svg { width: 16px; height: 16px; display: block; }
   .nx-editor-x:hover { color: var(--nx-ink); background: var(--nx-hover); }
+
+  /* Workout set editor */
+  .nx-wname { font-size: 15px; font-weight: 600; color: var(--nx-ink); margin-bottom: 4px; }
+  .nx-ghost { font-size: 12.5px; color: var(--nx-faint); margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+  .nx-set { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .nx-set-n { flex: 0 0 1.3rem; font-size: 12px; color: var(--nx-faint); font-variant-numeric: tabular-nums; }
+  .nx-stepgrp { display: inline-flex; align-items: center; gap: 4px; }
+  .nx-step { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--nx-fieldline); border-radius: 8px; background: transparent; color: var(--nx-mut); font-size: 15px; line-height: 1; cursor: pointer; }
+  .nx-step:hover { color: var(--nx-accent); border-color: var(--nx-accent); }
+  .nx-setin { width: 3.4rem; padding: 5px 4px; text-align: center; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--nx-ink); background: transparent; border: 1px solid var(--nx-fieldline); border-radius: 8px; outline: none; -moz-appearance: textfield; appearance: textfield; }
+  .nx-setin::-webkit-outer-spin-button, .nx-setin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .nx-setin:focus { border-color: var(--nx-accent); }
+  .nx-unit { font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; color: var(--nx-faint); margin-left: 2px; min-width: 2rem; }
+  .nx-pr { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--nx-accent); background: var(--nx-selbg); border-radius: 6px; padding: 2px 6px; }
+  .nx-set-x { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--nx-faint); cursor: pointer; font-size: 14px; line-height: 1; }
+  .nx-set-x svg { width: 14px; height: 14px; display: block; }
+  .nx-set-x:hover { color: var(--nx-ink); background: var(--nx-hover); }
+  .nx-wbtns { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+  .nx-addset { padding: 8px 14px; font-size: 13.5px; font-weight: 500; border-radius: 10px; border: 1px solid var(--nx-fieldline); background: transparent; color: var(--nx-mut); cursor: pointer; }
+  .nx-addset:hover { color: var(--nx-accent); border-color: var(--nx-accent); }
+  /* Phone width: the unit labels lose their seat so the PR chip and the
+     per-set delete keep theirs — kg-then-reps order is already taught by
+     the "last time 60×8" ghost line. */
+  @media (max-width: 480px) {
+    .nx-set { gap: 6px; }
+    .nx-setin { width: 2.9rem; }
+    .nx-unit { display: none; }
+  }
 </style>
 <script>
 (function () {
@@ -189,6 +220,17 @@ export function widgetHtml(): string {
   var saveError = "";
   var view = "food";
   var editorClosed = false;
+  // Workout editor state. wDraft is the working copy of the selected
+  // exercise's sets — inputs and steppers mutate it, Save persists it. It
+  // survives re-renders (live subscription updates included) until the
+  // selection changes. prevByKey keeps each exercise's previous session
+  // from the tool payload: the live subscription rebuilds workouts from raw
+  // rows that don't carry it, so it's re-attached at render time.
+  var selectedWid = null;
+  var wEditorClosed = false;
+  var wDraft = null;
+  var wDraftId = null;
+  var prevByKey = {};
 
   function fmtDate(d) {
     try {
@@ -209,6 +251,37 @@ export function widgetHtml(): string {
     var meals = (currentData && currentData.meals) || [];
     for (var i = 0; i < meals.length; i++) if (String(meals[i].id) === String(id)) return meals[i];
     return null;
+  }
+  function findWorkout(id) {
+    var ws = (currentData && currentData.workouts) || [];
+    for (var i = 0; i < ws.length; i++) if (String(ws[i].id) === String(id)) return ws[i];
+    return null;
+  }
+  function fmtSet(s) {
+    if (s.weight_kg != null && s.reps != null) return n(s.weight_kg) + "×" + s.reps;
+    if (s.reps != null) return "×" + s.reps;
+    if (s.weight_kg != null) return n(s.weight_kg) + "kg";
+    return "–";
+  }
+  function topWeight(sets) {
+    var top = null;
+    (Array.isArray(sets) ? sets : []).forEach(function (s) {
+      if (typeof s.weight_kg === "number" && (top == null || s.weight_kg > top)) top = s.weight_kg;
+    });
+    return top;
+  }
+  function bestFor(w) {
+    var p = w && w.previous;
+    return p && typeof p.best_weight_kg === "number" ? p.best_weight_kg : null;
+  }
+  function draftFor(w) {
+    if (wDraftId !== String(w.id)) {
+      wDraftId = String(w.id);
+      wDraft = (Array.isArray(w.sets) ? w.sets : []).map(function (s) {
+        return { weight_kg: s.weight_kg != null ? s.weight_kg : null, reps: s.reps != null ? s.reps : null };
+      });
+    }
+    return wDraft;
   }
   function foodTotals(meals) {
     var t = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
@@ -256,6 +329,41 @@ export function widgetHtml(): string {
     return h + "</div>";
   }
 
+  function stepGroup(kind, i, val, unit) {
+    return '<span class="nx-stepgrp">' +
+      '<button class="nx-step" data-step="' + kind + ':' + i + ':-1" aria-label="decrease">−</button>' +
+      '<input class="nx-setin" data-wfield="' + kind + ':' + i + '" type="number" inputmode="decimal" min="0" value="' + (val == null ? "" : n(val)) + '"/>' +
+      '<button class="nx-step" data-step="' + kind + ':' + i + ':1" aria-label="increase">+</button>' +
+      '<span class="nx-unit">' + unit + "</span></span>";
+  }
+  function setRowHtml(i, s, best) {
+    var pr = best != null && typeof s.weight_kg === "number" && s.weight_kg > best;
+    return '<div class="nx-set"><span class="nx-set-n">' + (i + 1) + "</span>" +
+      stepGroup("w", i, s.weight_kg, "kg") +
+      stepGroup("r", i, s.reps, "reps") +
+      (pr ? '<span class="nx-pr">PR</span>' : "") +
+      '<button class="nx-set-x" data-delset="' + i + '" aria-label="Delete set">' + X_SVG + "</button></div>";
+  }
+  function workoutEditorBox(w) {
+    var sets = draftFor(w);
+    var best = bestFor(w);
+    var h = '<div class="nx-box editor">';
+    h += '<button class="nx-editor-x" data-wclose="1" aria-label="Close editor" title="Close">' + X_SVG + "</button>";
+    h += '<div class="nx-wname">' + esc(w.exercise || w.exercise_key) + "</div>";
+    var p = w.previous;
+    if (p && Array.isArray(p.sets) && p.sets.length) {
+      h += '<div class="nx-ghost">Last time · ' + esc(fmtDate(p.date)) + ": " + p.sets.map(fmtSet).join("&nbsp;&nbsp;") +
+        (best != null ? " · best " + n(best) + "kg" : "") + "</div>";
+    } else {
+      h += '<div class="nx-ghost">First time logging this one.</div>';
+    }
+    sets.forEach(function (s, i) { h += setRowHtml(i, s, best); });
+    if (saveError) h += '<div class="nx-err">' + esc(saveError) + "</div>";
+    h += '<div class="nx-wbtns"><button class="nx-addset" data-addset="1">+ Add set</button>' +
+      '<button class="nx-save" id="nx-wsave-' + esc(w.id) + '" data-wsave="' + esc(w.id) + '">Save</button></div>';
+    return h + "</div>";
+  }
+
   function render(data) {
     if (!data) { root.innerHTML = ""; return; }
     // The goal in effect on the rendered day — server-supplied per-day via
@@ -291,16 +399,22 @@ export function widgetHtml(): string {
         progRow("Sets", "<b>" + totalSets + "</b>", 0, false) +
         (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "") +
         "</div></div>";
+      var showW = findWorkout(selectedWid) ? selectedWid : (workouts[0] && workouts[0].id);
       h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>Sets</th><th>Top</th></tr></thead><tbody>';
       workouts.forEach(function (w) {
         var sets = Array.isArray(w.sets) ? w.sets : [];
-        var top = null;
-        sets.forEach(function (s) { if (s.weight_kg != null && (top == null || s.weight_kg > top)) top = s.weight_kg; });
-        h += '<tr><td class="nm">' + esc(w.exercise || w.exercise_key) + '</td>' +
-          '<td class="num">' + (sets.length || (w.duration_min ? w.duration_min + "m" : "-")) + '</td>' +
-          '<td class="num">' + (top != null ? top + "kg" : "-") + "</td></tr>";
+        var top = topWeight(sets);
+        var best = bestFor(w);
+        var pr = top != null && best != null && top > best;
+        var sel = !wEditorClosed && String(w.id) === String(showW);
+        h += '<tr class="nx-tap' + (sel ? " nx-sel" : "") + '" data-wsel="' + esc(w.id) + '">' +
+          '<td class="nm">' + esc(w.exercise || w.exercise_key) + (pr ? ' <span class="nx-pr">PR</span>' : "") + "</td>" +
+          '<td class="num">' + (sets.length || (w.duration_min ? w.duration_min + "m" : "-")) + "</td>" +
+          '<td class="num">' + (top != null ? n(top) + "kg" : "-") + "</td></tr>";
       });
       h += "</tbody></table></div>";
+      var selW = findWorkout(showW) || workouts[0];
+      if (selW && !wEditorClosed) h += workoutEditorBox(selW);
       root.innerHTML = h;
       return;
     }
@@ -357,14 +471,17 @@ export function widgetHtml(): string {
     (entries || []).forEach(function (r) {
       var date = new Date(r.entry_date).toISOString().slice(0, 10);
       var base = Object.assign({ id: r.id, date: date }, r.data || {});
-      if (r.type === "workout") d.workouts.push(base);
+      if (r.type === "workout") {
+        if (base.exercise_key && prevByKey[base.exercise_key]) base.previous = prevByKey[base.exercise_key];
+        d.workouts.push(base);
+      }
       else if (r.type === "meal") d.meals.push(base);
       else if (r.type === "weight") d.weights.push(base);
     });
     return d;
   }
 
-  function writeMeal(id, data) {
+  function writeEntry(id, data) {
     if (db) return Promise.resolve(db.transact(db.tx.entries[id].update({ data: data, updated_at: Date.now() })));
     if (window.openai && typeof window.openai.callTool === "function") return window.openai.callTool("nexus_update_entry", { entry_id: id, data: data });
     return Promise.reject(new Error("No connection — reopen the app and try again."));
@@ -385,8 +502,59 @@ export function widgetHtml(): string {
     saveError = "";
     var btn = document.getElementById("nx-save-" + id);
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    writeMeal(id, data).then(function () {
+    writeEntry(id, data).then(function () {
       m.items = data.items; m.totals = totals; render(currentData);
+    }).catch(function (e) {
+      saveError = (e && e.message) || "Couldn't save. Try again.";
+      render(currentData);
+    });
+  }
+
+  function stepSet(kind, i, dir) {
+    if (!wDraft || !wDraft[i]) return;
+    var s = wDraft[i];
+    if (kind === "w") {
+      var wv = (typeof s.weight_kg === "number" ? s.weight_kg : 0) + dir * 2.5;
+      s.weight_kg = wv < 0 ? 0 : Math.round(wv * 100) / 100;
+    } else {
+      var rv = (typeof s.reps === "number" ? s.reps : 0) + dir;
+      s.reps = rv < 0 ? 0 : rv;
+    }
+    render(currentData);
+  }
+  function addSet() {
+    if (!wDraft) return;
+    // Copy the last set — or seed from last session's first set (Strong's move).
+    var last = wDraft[wDraft.length - 1];
+    if (!last) {
+      var w = findWorkout(wDraftId);
+      var pf = w && w.previous && Array.isArray(w.previous.sets) && w.previous.sets[0];
+      last = pf ? { weight_kg: pf.weight_kg != null ? pf.weight_kg : null, reps: pf.reps != null ? pf.reps : null } : { weight_kg: null, reps: null };
+    }
+    wDraft.push({ weight_kg: last.weight_kg, reps: last.reps });
+    render(currentData);
+  }
+  function saveWorkout(id) {
+    var w = findWorkout(id);
+    if (!w) { render(currentData); return; }
+    var sets = [];
+    (wDraft || []).forEach(function (s) {
+      if (s.weight_kg == null && s.reps == null) return;
+      var o = {};
+      if (typeof s.weight_kg === "number") o.weight_kg = s.weight_kg;
+      if (typeof s.reps === "number") o.reps = Math.round(s.reps);
+      sets.push(o);
+    });
+    // Full replacement, so carry every non-set field the entry already has.
+    var data = { exercise: w.exercise || w.exercise_key, exercise_key: w.exercise_key, sets: sets };
+    if (typeof w.duration_min === "number") data.duration_min = w.duration_min;
+    if (typeof w.distance_km === "number") data.distance_km = w.distance_km;
+    if (w.notes) data.notes = w.notes;
+    saveError = "";
+    var btn = document.getElementById("nx-wsave-" + id);
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    writeEntry(id, data).then(function () {
+      w.sets = sets; render(currentData);
     }).catch(function (e) {
       saveError = (e && e.message) || "Couldn't save. Try again.";
       render(currentData);
@@ -397,20 +565,47 @@ export function widgetHtml(): string {
     var t = e.target, c = t.closest ? function (s) { return t.closest(s); } : function () { return null; };
     var save = c("[data-save]"); if (save) { e.preventDefault(); saveMeal(save.getAttribute("data-save")); return; }
     var close = c("[data-close]"); if (close) { e.preventDefault(); editorClosed = true; saveError = ""; render(currentData); return; }
+    var wsave = c("[data-wsave]"); if (wsave) { e.preventDefault(); saveWorkout(wsave.getAttribute("data-wsave")); return; }
+    var wclose = c("[data-wclose]"); if (wclose) { e.preventDefault(); wEditorClosed = true; saveError = ""; render(currentData); return; }
+    var step = c("[data-step]"); if (step) { e.preventDefault(); var sp = step.getAttribute("data-step").split(":"); stepSet(sp[0], +sp[1], +sp[2]); return; }
+    var dset = c("[data-delset]"); if (dset) { e.preventDefault(); if (wDraft) { wDraft.splice(+dset.getAttribute("data-delset"), 1); render(currentData); } return; }
+    var aset = c("[data-addset]"); if (aset) { e.preventDefault(); addSet(); return; }
+    var wsel = c("[data-wsel]"); if (wsel) { selectedWid = wsel.getAttribute("data-wsel"); wEditorClosed = false; saveError = ""; render(currentData); return; }
     var vw = c("[data-view]"); if (vw) { view = vw.getAttribute("data-view"); saveError = ""; render(currentData); return; }
     var sel = c("[data-select]"); if (sel) { selectedId = sel.getAttribute("data-select"); editorClosed = false; saveError = ""; render(currentData); }
   });
 
+  // Set inputs write straight into the draft, so steppers, add-set, and live
+  // re-renders never lose what's been typed.
+  root.addEventListener("input", function (e) {
+    var t = e.target;
+    var f = t.getAttribute && t.getAttribute("data-wfield");
+    if (!f || !wDraft) return;
+    var p = f.split(":"), s = wDraft[+p[1]];
+    if (!s) return;
+    var v = t.value === "" ? null : parseFloat(t.value);
+    if (v != null && (!isFinite(v) || v < 0)) v = null;
+    if (p[0] === "w") s.weight_kg = v;
+    else s.reps = v == null ? null : Math.round(v);
+  });
+
   function initialState(out) {
     if (out && Array.isArray(out.logged)) {
-      var loggedMeal = null, hasWorkout = false, hasMeal = false;
+      var loggedMeal = null, loggedWorkout = null, hasMeal = false;
       out.logged.forEach(function (l) {
         if (!l) return;
         if (l.entry_type === "meal") { hasMeal = true; if (!loggedMeal) loggedMeal = l.id; }
-        if (l.entry_type === "workout") hasWorkout = true;
+        if (l.entry_type === "workout" && !loggedWorkout) loggedWorkout = l.id;
       });
-      if (hasWorkout && !hasMeal) view = "workout";
+      if (loggedWorkout && !hasMeal) { view = "workout"; selectedWid = loggedWorkout; }
       else if (loggedMeal) selectedId = loggedMeal;
+    }
+    // Keep each exercise's previous session + best from the payload — live
+    // subscription rows don't carry them.
+    if (out && Array.isArray(out.workouts)) {
+      out.workouts.forEach(function (w) {
+        if (w && w.exercise_key && w.previous) prevByKey[w.exercise_key] = w.previous;
+      });
     }
   }
 

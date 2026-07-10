@@ -64,6 +64,19 @@ const rules = {
       delete: 'isOwner',
     },
   },
+
+  // Catalogue rows are written only by the Worker (admin client, on log) —
+  // clients just read them, so the widget can know an exercise is bodyweight
+  // or group history by muscle. No client write path to corrupt.
+  exercises: {
+    bind: ['isOwner', "auth.id != null && auth.id in data.ref('owner.id')"],
+    allow: {
+      view: 'isOwner',
+      create: 'false',
+      update: 'false',
+      delete: 'false',
+    },
+  },
 } satisfies InstantRules
 
 export default rules

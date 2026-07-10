@@ -80,13 +80,23 @@ const MealInput = z.object({
 
 const WorkoutInput = z.object({
   type: z.literal("workout"),
-  exercise: z.string().trim().min(1).describe("Exercise name, e.g. 'Bench Press'"),
+  exercise: z.string().trim().min(1).describe("Exercise name, e.g. 'Bench Press - Barbell'"),
   exercise_key: z.string().trim().min(1).regex(/^[a-z0-9_]+$/, "lowercase_with_underscores")
-    .describe("Stable lowercase_with_underscores key, e.g. 'bench_press'. Reuse the same key for the same exercise so progress clusters."),
+    .describe("Stable lowercase_with_underscores key, e.g. 'bench_press_barbell'. Reuse the same key for the same exercise so progress clusters. Variants are distinct exercises: barbell vs dumbbell vs incline each get their own key."),
   sets: z.array(WorkoutSet).optional().describe("One entry per set, each with weight_kg and reps"),
   duration_min: z.number().nonnegative().optional(),
   distance_km: z.number().nonnegative().optional(),
   notes: z.string().optional(),
+  // Catalogue metadata — supply these when logging an exercise_key that is
+  // not in your_exercises yet; the server creates the catalogue row from them.
+  muscle: z.string().trim().min(1).optional()
+    .describe("Primary muscle group, e.g. 'Chest'. Supply when this exercise_key is new."),
+  pattern: z.string().trim().min(1).optional()
+    .describe("Movement family, e.g. 'Bench Press' or 'Row'. Supply when this exercise_key is new."),
+  equipment: z.string().trim().min(1).optional()
+    .describe("'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', ... Supply when this exercise_key is new."),
+  is_bodyweight: z.boolean().optional()
+    .describe("True for pull-ups, dips, push-ups etc. where load is the body."),
 });
 
 const WeightInput = z.object({
@@ -109,11 +119,23 @@ export function parseEntryInput(raw: unknown): EntryInputT {
   return r.data;
 }
 
+export interface ExerciseCatalogInput {
+  key: string;
+  name: string;
+  muscle?: string;
+  pattern?: string;
+  equipment?: string;
+  is_bodyweight?: boolean;
+}
+
 export interface StorageEntry {
   type: "meal" | "workout" | "weight";
   exercise_key: string | null;
   meal_type: string | null;
   data: Record<string, unknown>;
+  /** Catalogue row to upsert for this entry's exercise_key (workouts only).
+   *  Metadata lives in the exercises table, never inside entry data. */
+  catalog: ExerciseCatalogInput | null;
 }
 
 /** Map a flat input entry to the stored data shape (meals become a single
@@ -131,6 +153,7 @@ export function entryInputToStorage(e: EntryInputT): StorageEntry {
       exercise_key: null,
       meal_type: e.meal_type ?? null,
       data: { meal_type: e.meal_type, items: [{ name: e.name, quantity: 1, ...totals }], totals },
+      catalog: null,
     };
   }
   if (e.type === "workout") {
@@ -143,9 +166,17 @@ export function entryInputToStorage(e: EntryInputT): StorageEntry {
         exercise: e.exercise, exercise_key: key, sets: e.sets,
         duration_min: e.duration_min, distance_km: e.distance_km, notes: e.notes,
       },
+      catalog: {
+        key,
+        name: e.exercise,
+        muscle: e.muscle,
+        pattern: e.pattern,
+        equipment: e.equipment,
+        is_bodyweight: e.is_bodyweight,
+      },
     };
   }
-  return { type: "weight", exercise_key: null, meal_type: null, data: { weight_kg: e.weight_kg, notes: e.notes } };
+  return { type: "weight", exercise_key: null, meal_type: null, data: { weight_kg: e.weight_kg, notes: e.notes }, catalog: null };
 }
 
 export type Entry = z.infer<typeof EntryShape>;

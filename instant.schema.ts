@@ -59,6 +59,24 @@ const _schema = i.schema({
       reason:       i.string().optional(),          // "cutting for summer", optional context
       created_at:   i.date().indexed(),
     }),
+
+    // Per-user exercise catalogue, one row per distinct exercise_key. Rows
+    // accrete: the first time a user logs a new key, the model supplies the
+    // metadata (it knows an incline dumbbell press is a chest movement) and
+    // the Worker upserts the row — no built-in seed list needed. This is what
+    // makes history analyzable: bench_press_barbell vs bench_press_dumbbell
+    // vs incline_bench_press_dumbbell are distinct catalogued things, each
+    // carrying muscle / movement pattern / equipment.
+    exercises: i.entity({
+      key:           i.string().indexed(),          // "bench_press_barbell" — unique per owner
+      name:          i.string(),                    // "Bench Press - Barbell"
+      muscle:        i.string().optional(),         // "Chest"
+      pattern:       i.string().optional(),         // "Bench Press" (movement family)
+      equipment:     i.string().optional(),         // "Barbell" | "Dumbbell" | "Machine" | ...
+      is_bodyweight: i.boolean().optional(),
+      created_at:    i.date().indexed(),
+      updated_at:    i.date().indexed().optional(),
+    }),
   },
 
   links: {
@@ -86,6 +104,11 @@ const _schema = i.schema({
     goalOwner: {
       forward: { on: 'goals', has: 'one', label: 'owner' },
       reverse: { on: '$users', has: 'many', label: 'goals' },
+    },
+    // exercises.owner (one) <-> $users.exercises (many)
+    exerciseOwner: {
+      forward: { on: 'exercises', has: 'one', label: 'owner' },
+      reverse: { on: '$users', has: 'many', label: 'exercises' },
     },
   },
 })

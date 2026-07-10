@@ -32,7 +32,30 @@ const LoggedItem = z
   .partial()
   .passthrough();
 
-const Workout = z.object({ id: z.string(), date: z.string() }).partial().passthrough();
+const WorkoutSetOut = z
+  .object({ weight_kg: z.number(), reps: z.number() })
+  .partial()
+  .passthrough();
+const Workout = z
+  .object({
+    id: z.string(),
+    date: z.string(),
+    exercise: z.string(),
+    exercise_key: z.string(),
+    sets: z.array(WorkoutSetOut),
+    previous: z
+      .object({
+        date: z.string(),
+        sets: z.array(WorkoutSetOut),
+        best_weight_kg: z.number().optional(),
+      })
+      .partial()
+      .passthrough()
+      .describe("The user's last session for this exercise, plus their all-time best weight."),
+    pr: z.boolean().describe("True when today's top weight beats the user's previous best — call it out."),
+  })
+  .partial()
+  .passthrough();
 const MealItem = z
   .object({
     name: z.string(),
@@ -97,6 +120,10 @@ const historyShape = {
     .array(z.string())
     .optional()
     .describe("Distinct exercise_key values, reuse these so progressions cluster."),
+  uncatalogued_exercises: z
+    .array(z.string())
+    .optional()
+    .describe("exercise_keys missing catalogue metadata — next time you log one of these, include muscle, pattern, and equipment."),
   pending_friend_requests: z.number().optional(),
   day_totals: DayTotals.optional(),
   goal: Goal.optional(),

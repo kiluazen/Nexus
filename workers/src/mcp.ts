@@ -50,7 +50,7 @@ const WIDGET_META = {
 };
 
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
-Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press", never "bench").
+Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press_barbell", never "bench"). Variants are distinct exercises — barbell vs dumbbell vs incline each get their own key. When you log an exercise_key that is new or listed in uncatalogued_exercises, also pass muscle, pattern, equipment, and is_bodyweight so the server can catalogue it. When a log result carries pr: true on a workout, congratulate the user — they beat their best.
 Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely.
 Goal rules: only call nexus_set_goal when the user explicitly asks to change a calorie/protein/carb/fat target. Never call it just because they logged something.
 Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
@@ -164,7 +164,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         description:
           "Use this when the user mentions any workout, exercise, gym session, sport, run, or physical activity they did, any meal, food, snack, or drink they consumed, or a body-weight reading. Log it immediately without asking for confirmation; estimate calories and macros yourself first. " +
           "Each entry is a flat object keyed by `type`. A meal is: {\"type\":\"meal\",\"name\":\"Cappuccino\",\"calories\":120,\"protein_g\":6,\"carbs_g\":10,\"fat_g\":6}. " +
-          "A workout is: {\"type\":\"workout\",\"exercise\":\"Bench Press\",\"exercise_key\":\"bench_press\",\"sets\":[{\"weight_kg\":60,\"reps\":8}]}. " +
+          "A workout is: {\"type\":\"workout\",\"exercise\":\"Bench Press - Barbell\",\"exercise_key\":\"bench_press_barbell\",\"sets\":[{\"weight_kg\":60,\"reps\":8}],\"muscle\":\"Chest\",\"pattern\":\"Bench Press\",\"equipment\":\"Barbell\"} — include muscle/pattern/equipment when the exercise_key is new or uncatalogued. " +
           "A weight is: {\"type\":\"weight\",\"weight_kg\":74.5}. " +
           "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,

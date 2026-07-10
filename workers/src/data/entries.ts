@@ -10,6 +10,8 @@ import {
 } from "../schema/entry-shapes";
 import { ValidationError, parseDate, todayUtc, addDaysUtc } from "../lib/dates";
 import { getGoalForDate } from "./goals";
+import { exerciseUpsertChunks } from "./exercises";
+import type { ExerciseCatalogInput } from "../schema/entry-shapes";
 
 export interface UserCtx {
   userId: string;
@@ -53,6 +55,7 @@ export async function logEntries(
   const db = adminDb(env);
   const chunks = [];
   const logged: Record<string, unknown>[] = [];
+  const catalogItems: ExerciseCatalogInput[] = [];
 
   for (const raw of args.entries) {
     // Validate against the flat, published input schema, then map to storage.
@@ -75,6 +78,7 @@ export async function logEntries(
     );
 
     if (s.type === "workout") {
+      if (s.catalog) catalogItems.push(s.catalog);
       const out: Record<string, unknown> = { id: entryId, entry_type: "workout", exercise_key: s.exercise_key };
       if (Array.isArray(s.data.sets)) out.total_sets = (s.data.sets as unknown[]).length;
       if (typeof s.data.duration_min === "number") out.duration_min = s.data.duration_min;
@@ -91,6 +95,10 @@ export async function logEntries(
     }
   }
 
+  // Catalogue upsert rides in the same transact — a log is one write.
+  if (catalogItems.length > 0) {
+    chunks.push(...(await exerciseUpsertChunks(env, user, catalogItems)) as typeof chunks);
+  }
   if (chunks.length > 0) await db.transact(chunks);
   return { logged };
 }
@@ -125,10 +133,12 @@ export async function getHistory(
   if (args.type) whereRange.push({ type: args.type });
 
   let rows: EntryRow[];
-  // For own reads we also need the exercise-key list and pending-request count.
-  // They're independent of the entries query, so fire all three together —
-  // sequential InstantDB calls are ~400ms each and stack up otherwise.
+  // For own reads we also need the exercise-key list, the catalogue, and the
+  // pending-request count. They're independent of the entries query, so fire
+  // them all together — sequential InstantDB calls are ~400ms each and stack
+  // up otherwise.
   let exerciseKeys: string[] = [];
+  let uncatalogued: string[] = [];
   let pendingCount = 0;
 
   if (args.friend_id) {
@@ -162,7 +172,7 @@ export async function getHistory(
   } else {
     // Own reads run permission-scoped: instant.perms.ts is the enforcement.
     const scoped = userDb(env, user.email);
-    const [entriesRes, exRes, pendingRes] = await Promise.all([
+    const [entriesRes, exRes, catRes, pendingRes] = await Promise.all([
       rawQuery(scoped, {
         entries: { $: { where: { and: whereRange }, order: { entry_date: "desc" } } },
       }),
@@ -178,6 +188,9 @@ export async function getHistory(
         },
       }),
       rawQuery(scoped, {
+        exercises: { $: { fields: ["key", "muscle"], limit: 1000 } },
+      }),
+      rawQuery(scoped, {
         friendships: { $: { where: { "addressee.id": user.userId, status: "pending" } } },
       }),
     ]);
@@ -186,6 +199,17 @@ export async function getHistory(
     for (const row of exRes.entries as { exercise_key?: string }[]) {
       if (row.exercise_key) keys.add(row.exercise_key);
     }
+    // A key is uncatalogued until its catalogue row exists AND has a muscle —
+    // this is what tells the model to send metadata next time it logs the key,
+    // which is also how pre-catalogue history backfills itself over time.
+    const cataloged = new Map<string, { muscle?: string | null }>(
+      (catRes.exercises as { key: string; muscle?: string | null }[]).map((r) => [r.key, r]),
+    );
+    uncatalogued = [...keys].filter((k) => {
+      const c = cataloged.get(k);
+      return !c || c.muscle == null;
+    }).sort();
+    for (const k of cataloged.keys()) keys.add(k);
     exerciseKeys = [...keys].sort();
     pendingCount = pendingRes.friendships.length;
   }
@@ -213,6 +237,66 @@ export async function getHistory(
     }
   }
 
+  // Single-day own reads (the widget card, the post-log payload) carry each
+  // workout's previous session and a PR flag — the Strong mechanic: every
+  // exercise shows what you did last time, and says when you beat your best.
+  if (!args.friend_id && fromDate === toDate && workouts.length > 0) {
+    const dayKeys = [...new Set(workouts.map((w) => w.exercise_key).filter(Boolean))] as string[];
+    if (dayKeys.length > 0) {
+      const scoped = userDb(env, user.email);
+      // Recent-first; 400 rows of prior history is plenty to find each key's
+      // last session and a best weight worth calling a PR.
+      const prior = await rawQuery(scoped, {
+        entries: {
+          $: {
+            where: {
+              type: "workout",
+              exercise_key: { $in: dayKeys },
+              entry_date: { $lt: dateToMs(fromDate) },
+            },
+            order: { entry_date: "desc" },
+            limit: 400,
+          },
+        },
+      });
+      const topWeight = (sets: unknown): number | null => {
+        let top: number | null = null;
+        if (Array.isArray(sets)) {
+          for (const s of sets as { weight_kg?: unknown }[]) {
+            if (typeof s.weight_kg === "number" && (top == null || s.weight_kg > top)) top = s.weight_kg;
+          }
+        }
+        return top;
+      };
+      type PrevRec = { date: string; sets: unknown[]; best: number };
+      const prevByKey = new Map<string, PrevRec>();
+      for (const row of prior.entries as EntryRow[]) {
+        const k = row.exercise_key;
+        if (!k) continue;
+        const sets = ((row.data ?? {}) as { sets?: unknown[] }).sets;
+        let rec = prevByKey.get(k);
+        if (!rec) {
+          // Rows are newest-first, so the first row per key IS the last session.
+          rec = { date: msToDate(row.entry_date), sets: Array.isArray(sets) ? sets : [], best: 0 };
+          prevByKey.set(k, rec);
+        }
+        const top = topWeight(sets);
+        if (top != null && top > rec.best) rec.best = top;
+      }
+      for (const w of workouts) {
+        const rec = prevByKey.get(w.exercise_key as string);
+        if (!rec) continue;
+        w.previous = {
+          date: rec.date,
+          sets: rec.sets,
+          ...(rec.best > 0 ? { best_weight_kg: rec.best } : {}),
+        };
+        const top = topWeight((w as { sets?: unknown[] }).sets);
+        if (top != null && rec.best > 0 && top > rec.best) w.pr = true;
+      }
+    }
+  }
+
   const result: Record<string, unknown> = {
     period: { from: fromDate, to: toDate },
     workouts,
@@ -222,6 +306,7 @@ export async function getHistory(
 
   if (!args.friend_id) {
     result.your_exercises = exerciseKeys;
+    if (uncatalogued.length > 0) result.uncatalogued_exercises = uncatalogued;
     if (pendingCount > 0) result.pending_friend_requests = pendingCount;
   }
 
