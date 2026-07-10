@@ -19,7 +19,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v5.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v6.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -392,13 +392,22 @@ export function widgetHtml(): string {
     h += "</div>";
 
     if (view === "workout") {
-      var totalSets = 0;
-      workouts.forEach(function (w) { totalSets += (w.sets || []).length; });
-      h += '<div class="nx-prog-wide"><div class="nx-macros2">' +
-        progRow("Exercises", "<b>" + workouts.length + "</b>", 0, false) +
-        progRow("Sets", "<b>" + totalSets + "</b>", 0, false) +
-        (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "") +
-        "</div></div>";
+      // Header stats that the list below can't show: tonnage (Σ weight×reps,
+      // the number lifters actually compare day to day), PRs, body weight.
+      // Exercise/set counts are visible in the list — no row wasted on them.
+      var vol = 0, prCount = 0;
+      workouts.forEach(function (w) {
+        (Array.isArray(w.sets) ? w.sets : []).forEach(function (s) {
+          if (typeof s.weight_kg === "number" && typeof s.reps === "number") vol += s.weight_kg * s.reps;
+        });
+        var b = bestFor(w), tp = topWeight(w.sets);
+        if (b != null && tp != null && tp > b) prCount++;
+      });
+      var statRows =
+        (vol > 0 ? progRow("Volume", "<b>" + Math.round(vol).toLocaleString() + "</b> kg", 0, false) : "") +
+        (prCount > 0 ? progRow("PRs", "<b>" + prCount + "</b>", 0, false) : "") +
+        (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "");
+      if (statRows) h += '<div class="nx-prog-wide"><div class="nx-macros2">' + statRows + "</div></div>";
       var showW = findWorkout(selectedWid) ? selectedWid : (workouts[0] && workouts[0].id);
       h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>Sets</th><th>Top</th></tr></thead><tbody>';
       workouts.forEach(function (w) {
