@@ -19,7 +19,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v6.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v7.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -195,6 +195,13 @@ export function widgetHtml(): string {
   .nx-wbtns { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
   .nx-addset { padding: 8px 14px; font-size: 13.5px; font-weight: 500; border-radius: 10px; border: 1px solid var(--nx-fieldline); background: transparent; color: var(--nx-mut); cursor: pointer; }
   .nx-addset:hover { color: var(--nx-accent); border-color: var(--nx-accent); }
+
+  /* Inline body-weight logger — a slim row above the workout list */
+  .nx-wt { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 0 2px; }
+  .nx-wt .lbl { font-size: 12.5px; color: var(--nx-mut); }
+  .nx-wt .ctl { display: inline-flex; align-items: center; gap: 6px; }
+  .nx-wt .nx-setin { width: 4rem; }
+  .nx-wt .nx-unit { min-width: 0; margin: 0; }
   /* Phone width: the unit labels lose their seat so the PR chip and the
      per-set delete keep theirs — kg-then-reps order is already taught by
      the "last time 60×8" ghost line. */
@@ -392,22 +399,13 @@ export function widgetHtml(): string {
     h += "</div>";
 
     if (view === "workout") {
-      // Header stats that the list below can't show: tonnage (Σ weight×reps,
-      // the number lifters actually compare day to day), PRs, body weight.
-      // Exercise/set counts are visible in the list — no row wasted on them.
-      var vol = 0, prCount = 0;
-      workouts.forEach(function (w) {
-        (Array.isArray(w.sets) ? w.sets : []).forEach(function (s) {
-          if (typeof s.weight_kg === "number" && typeof s.reps === "number") vol += s.weight_kg * s.reps;
-        });
-        var b = bestFor(w), tp = topWeight(w.sets);
-        if (b != null && tp != null && tp > b) prCount++;
-      });
-      var statRows =
-        (vol > 0 ? progRow("Volume", "<b>" + Math.round(vol).toLocaleString() + "</b> kg", 0, false) : "") +
-        (prCount > 0 ? progRow("PRs", "<b>" + prCount + "</b>", 0, false) : "") +
-        (weights.length ? progRow("Weight", "<b>" + n(weights[0].weight_kg) + "</b> kg", 0, false) : "");
-      if (statRows) h += '<div class="nx-prog-wide"><div class="nx-macros2">' + statRows + "</div></div>";
+      // No derived stats up here — just the one thing worth capturing daily:
+      // body weight. Click the value, type, it saves itself on blur/Enter.
+      var todayWt = weights.length ? weights[0].weight_kg : null;
+      h += '<div class="nx-wt"><span class="lbl">Weight today</span><span class="ctl">' +
+        '<input id="nx-wt-in" class="nx-setin" type="number" inputmode="decimal" min="0" step="0.1" ' +
+        'value="' + (todayWt != null ? n(todayWt) : "") + '" placeholder="kg"/>' +
+        '<span class="nx-unit">kg</span></span></div>';
       var showW = findWorkout(selectedWid) ? selectedWid : (workouts[0] && workouts[0].id);
       h += '<div class="nx-box list"><table class="nx-tbl"><thead><tr><th class="l"></th><th>Sets</th><th>Top</th></tr></thead><tbody>';
       workouts.forEach(function (w) {
@@ -471,7 +469,7 @@ export function widgetHtml(): string {
   function applyData(data) {
     currentData = data;
     var ae = document.activeElement;
-    var typing = ae && ae.closest && ae.closest(".nx-box.editor");
+    var typing = ae && ae.closest && (ae.closest(".nx-box.editor") || ae.closest(".nx-wt"));
     if (!typing) render(data);
   }
 
@@ -519,6 +517,63 @@ export function widgetHtml(): string {
     });
   }
 
+  function uuid4() {
+    var b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    var s = "", i;
+    for (i = 0; i < 16; i++) {
+      s += (b[i] < 16 ? "0" : "") + b[i].toString(16);
+      if (i === 3 || i === 5 || i === 7 || i === 9) s += "-";
+    }
+    return s;
+  }
+  var wtSaving = false;
+  function saveWeightLog() {
+    var input = document.getElementById("nx-wt-in");
+    if (!input || wtSaving) return;
+    var weights = (currentData && currentData.weights) || [];
+    var cur = weights.length ? weights[0].weight_kg : null;
+    var v = parseFloat(input.value);
+    // Empty or junk: quietly restore what's saved, write nothing.
+    if (!isFinite(v) || v <= 0) { input.value = cur != null ? n(cur) : ""; return; }
+    if (cur != null && n(v) === n(cur)) return;
+    wtSaving = true;
+    var done = function () {
+      wtSaving = false;
+      currentData.weights = [{ id: (weights[0] && weights[0].id) || "wt-local", weight_kg: v }];
+      saveError = ""; render(currentData);
+    };
+    var fail = function (e) {
+      wtSaving = false;
+      saveError = (e && e.message) || "Couldn't save. Try again.";
+      render(currentData);
+    };
+    if (weights.length) { writeEntry(weights[0].id, { weight_kg: v }).then(done).catch(fail); return; }
+    // No weight entry today yet — create one. The live session writes the row
+    // directly (owner link = the signed-in widget user); otherwise fall back
+    // to the log tool.
+    if (db) {
+      db.getAuth().then(function (a) {
+        var uid = a && (a.id || (a.user && a.user.id));
+        if (!uid) throw new Error("Not signed in — reopen the app.");
+        var period = currentPeriod();
+        var now = Date.now();
+        return db.transact(
+          db.tx.entries[uuid4()]
+            .update({ type: "weight", entry_date: Date.parse(period.from + "T00:00:00Z"), data: { weight_kg: v }, created_at: now, updated_at: now })
+            .link({ owner: uid })
+        );
+      }).then(done).catch(fail);
+      return;
+    }
+    if (window.openai && typeof window.openai.callTool === "function") {
+      window.openai.callTool("nexus_log_entries", { entries: [{ type: "weight", weight_kg: v }], date: currentPeriod().from })
+        .then(done).catch(fail);
+      return;
+    }
+    fail(new Error("No connection — reopen the app and try again."));
+  }
   function stepSet(kind, i, dir) {
     if (!wDraft || !wDraft[i]) return;
     var s = wDraft[i];
@@ -582,6 +637,14 @@ export function widgetHtml(): string {
     var wsel = c("[data-wsel]"); if (wsel) { selectedWid = wsel.getAttribute("data-wsel"); wEditorClosed = false; saveError = ""; render(currentData); return; }
     var vw = c("[data-view]"); if (vw) { view = vw.getAttribute("data-view"); saveError = ""; render(currentData); return; }
     var sel = c("[data-select]"); if (sel) { selectedId = sel.getAttribute("data-select"); editorClosed = false; saveError = ""; render(currentData); }
+  });
+
+  // Weight autosaves: blur commits, Enter just blurs.
+  root.addEventListener("focusout", function (e) {
+    if (e.target && e.target.id === "nx-wt-in") saveWeightLog();
+  });
+  root.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target && e.target.id === "nx-wt-in") e.target.blur();
   });
 
   // Set inputs write straight into the draft, so steppers, add-set, and live
