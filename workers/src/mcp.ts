@@ -21,37 +21,41 @@ function fullWidgetHtml(): string {
   return widgetHtml() + "\n<script>" + INSTANT_BUNDLE + "</script>";
 }
 
-// CSP for the widget iframe. connect_domains covers fetch + websocket to
+// CSP for the widget iframe. connectDomains covers fetch + websocket to
 // InstantDB for the live session (both https and wss are declared because
-// sandbox handling of wss is inconsistent). No resource_domains needed: the
-// library is inlined, not fetched from a CDN.
-const WIDGET_CSP = {
+// sandbox handling of wss is inconsistent). No resourceDomains are needed:
+// the library is inlined, not fetched from a CDN.
+const LEGACY_WIDGET_CSP = {
   connect_domains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
+  resource_domains: [] as string[],
+};
+const WIDGET_CSP = {
+  connectDomains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
+  resourceDomains: [] as string[],
 };
 
 // Shared so the resource registration and the read callback agree — the MCP
 // SDK does not merge registration _meta into read results.
 //
-// Both the legacy OpenAI-namespaced keys AND the vendor-neutral MCP Apps
-// keys are sent. ChatGPT only recognizes its own `openai/*` keys; Claude
-// (and other spec-following clients) only recognize `ui.*`. Same values,
-// two names, so both hosts can find the widget.
+// ChatGPT compatibility metadata and current MCP Apps metadata are deliberately
+// separate because their CSP field names differ (snake_case vs camelCase).
 const WIDGET_META = {
-  "openai/widgetCSP": WIDGET_CSP,
+  "openai/widgetCSP": LEGACY_WIDGET_CSP,
   "openai/widgetPrefersBorder": true,
-  // Required for directory submission: pins the origin the widget renders from.
   "openai/widgetDomain": "https://mcp.nexus.kushalsm.com",
   "openai/widgetDescription":
     "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
   ui: {
     csp: WIDGET_CSP,
+    domain: "https://mcp.nexus.kushalsm.com",
     prefersBorder: true,
   },
 };
 
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
 Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press_barbell", never "bench"). Variants are distinct exercises — barbell vs dumbbell vs incline each get their own key. When you log an exercise_key that is new or listed in uncatalogued_exercises, also pass muscle, pattern, equipment, and is_bodyweight so the server can catalogue it. When a log result carries pr: true on a workout, congratulate the user — they beat their best.
-Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely.
+Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely — but do that check in a SEPARATE earlier turn, never in the same turn as a log.
+IMPORTANT (iOS rendering): when you call nexus_log_entries, it must be the ONLY tool call in that turn. The ChatGPT iOS app fails to display a widget whose turn contained other tool calls before it. If the user asks for history AND a log in one message, log first (alone), then answer the history question from a follow-up tool call or invite them to ask again.
 Goal rules: only call nexus_set_goal when the user explicitly asks to change a calorie/protein/carb/fat target. Never call it just because they logged something.
 Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
 
