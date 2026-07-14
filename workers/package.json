@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy",
     "pretest": "npm run build:widget-bridge",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "harness": "npm run build:widget-bridge && node harness/emit-widget.mjs && node harness/serve.mjs"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.7.0",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.40",
     "@cloudflare/workers-types": "^4.20250515.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8",

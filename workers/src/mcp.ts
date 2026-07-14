@@ -13,29 +13,28 @@ import { ValidationError, todayUtc } from "./lib/dates";
 // Text rule). We inline it into the widget so there's no external <script src>
 // in the render path — the documented, reliable pattern.
 import INSTANT_BUNDLE from "../vendor/instantdb-core.umd.txt";
-import OPENAI_MCP_APP_BRIDGE from "../vendor/mcp-app-bridge.iife.txt";
-import CLAUDE_MCP_APP_BRIDGE from "../vendor/mcp-app-bridge-claude.iife.txt";
+import MCP_APP_BRIDGE from "../vendor/mcp-app-bridge.iife.txt";
 
 declare const __MCP_HOST_TARGET__: "openai" | "claude";
 declare const __WIDGET_URI__: string;
+declare const __WIDGET_URI_PREV__: string;
 declare const __WIDGET_DOMAIN__: string;
 
 // Every deployed Worker defines one host target at build time. There is no
 // runtime host detection and no alternate protocol path inside either widget.
 const MCP_HOST_TARGET = __MCP_HOST_TARGET__;
 const WIDGET_URI = __WIDGET_URI__;
+const WIDGET_URI_PREV = typeof __WIDGET_URI_PREV__ === "undefined" ? "" : __WIDGET_URI_PREV__;
 const WIDGET_DOMAIN = __WIDGET_DOMAIN__;
-const MCP_APP_BRIDGE = MCP_HOST_TARGET === "claude"
-  ? CLAUDE_MCP_APP_BRIDGE
-  : OPENAI_MCP_APP_BRIDGE;
 
-// The full widget document = app fragment + the inlined InstantDB library.
-// Built by concatenation (not template interpolation) because the minified
-// bundle contains backticks and ${ that would break a template literal.
+// The full widget document = app fragment + the one shared bridge bundle +
+// (ChatGPT only) the inlined InstantDB library. Splices use a function
+// replacement — a plain replacement string would reinterpret $-sequences
+// ($&, $') inside the minified bundles and corrupt them silently.
 function fullWidgetHtml(): string {
   const html = widgetHtml().replace(
     "/*__NEXUS_MCP_APP_BRIDGE__*/",
-    MCP_APP_BRIDGE,
+    () => MCP_APP_BRIDGE,
   );
   // ChatGPT uses the InstantDB subscription to keep an already-rendered card
   // synchronized with later writes. Claude receives the complete tool result
@@ -70,7 +69,7 @@ const WIDGET_META = {
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
 Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press_barbell", never "bench"). Variants are distinct exercises — barbell vs dumbbell vs incline each get their own key. When you log an exercise_key that is new or listed in uncatalogued_exercises, also pass muscle, pattern, equipment, and is_bodyweight so the server can catalogue it. When a log result carries pr: true on a workout, congratulate the user — they beat their best.
 Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely — but do that check in a SEPARATE earlier turn, never in the same turn as a log.
-IMPORTANT (iOS rendering): when you call nexus_log_entries, it must be the ONLY tool call in that turn. The ChatGPT iOS app fails to display a widget whose turn contained other tool calls before it. If the user asks for history AND a log in one message, log first (alone), then answer the history question from a follow-up tool call or invite them to ask again.
+IMPORTANT (widget rendering, all hosts): when you call nexus_log_entries, it must be the ONLY tool call in that turn — no tool search, no history check, nothing before or after it. Hosts fail to display the card otherwise (ChatGPT iOS drops it; Claude folds the whole run into its reasoning block and never mounts it). If the user asks for history AND a log in one message, log first (alone, so the card renders), then answer the history question in the next turn.
 Goal rules: only call nexus_set_goal when the user explicitly asks to change a calorie/protein/carb/fat target. Never call it just because they logged something.
 Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
 
@@ -150,31 +149,41 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
   }
 
   async init() {
-    this.server.registerResource(
-      "nexus-today",
-      WIDGET_URI,
-      {
-        title: "Nexus day card",
-        description: "Live card showing the user's logged workouts, meals, and totals.",
-        // Confirmed via a live tail on prod: the actual ChatGPT MCP client
-        // declares clientCapabilities.extensions["io.modelcontextprotocol/ui"]
-        // .mimeTypes = ["text/html;profile=mcp-app"] on resources/read — the
-        // older "text/html+skybridge" mismatches that and the client aborts
-        // the read (responseStreamDisconnected / "Failed to fetch template").
-        mimeType: "text/html;profile=mcp-app",
-        _meta: WIDGET_META,
-      },
-      async () => ({
-        contents: [
-          {
-            uri: WIDGET_URI,
-            mimeType: "text/html;profile=mcp-app",
-            text: fullWidgetHtml(),
-            _meta: WIDGET_META,
-          },
-        ],
-      }),
-    );
+    // The current widget URI plus the previous one. Hosts cache tool _meta
+    // (Claude kept requesting the old URI after a bump — "Unable to reach
+    // Nexus Claude"), so the outgoing URI stays registered for one release
+    // and serves the same document.
+    for (const [name, uri] of [
+      ["nexus-today", WIDGET_URI],
+      ["nexus-today-prev", WIDGET_URI_PREV],
+    ] as const) {
+      if (!uri) continue;
+      this.server.registerResource(
+        name,
+        uri,
+        {
+          title: "Nexus day card",
+          description: "Live card showing the user's logged workouts, meals, and totals.",
+          // Confirmed via a live tail on prod: the actual ChatGPT MCP client
+          // declares clientCapabilities.extensions["io.modelcontextprotocol/ui"]
+          // .mimeTypes = ["text/html;profile=mcp-app"] on resources/read — the
+          // older "text/html+skybridge" mismatches that and the client aborts
+          // the read (responseStreamDisconnected / "Failed to fetch template").
+          mimeType: "text/html;profile=mcp-app",
+          _meta: WIDGET_META,
+        },
+        async () => ({
+          contents: [
+            {
+              uri,
+              mimeType: "text/html;profile=mcp-app",
+              text: fullWidgetHtml(),
+              _meta: WIDGET_META,
+            },
+          ],
+        }),
+      );
+    }
 
     this.server.registerTool(
       "nexus_log_entries",

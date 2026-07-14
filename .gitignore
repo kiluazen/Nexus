@@ -19,3 +19,4 @@ node_modules
 
 # Scratch screen recordings / exports at repo root — never commit
 /*.mp4
+harness/out/

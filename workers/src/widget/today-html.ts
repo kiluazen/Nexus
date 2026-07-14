@@ -21,6 +21,22 @@ import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
 export const WIDGET_URI = "ui://widget/nexus-today-v13.html";
 
+// Dark theme tokens, emitted twice in the stylesheet — once under the
+// prefers-color-scheme fallback and once under the host-declared
+// [data-theme="dark"] — so they live in one constant here.
+// boxbg is a dark scrim (not a white tint like the light-mode value) — the
+// statues show in full behind these boxes with a brightening "screen" blend,
+// so the box needs to dim what's behind it, not lighten it, or the CARBS/FAT
+// labels wash out.
+const NX_DARK_TOKENS = `
+      --nx-ink: #f2f3f5; --nx-num: #e9eaec; --nx-mut: #9096a0; --nx-faint: #6a6f78;
+      --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
+      --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
+      --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
+      --nx-boxbg: rgba(0,0,0,.58); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
+      --nx-chipbg: rgba(32,34,40,.94);
+`;
+
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
 // these exact numbers. Once data.goal arrives in the payload it always wins.
@@ -42,6 +58,7 @@ export function widgetHtml(): string {
   return `<div id="nexus-root"></div>
 <style>
   :root {
+    --nx-safe-t: 0px; --nx-safe-r: 0px; --nx-safe-b: 0px; --nx-safe-l: 0px;
     --nx-ink: #16181d; --nx-num: #16181d; --nx-mut: #6b7280; --nx-faint: #9aa0aa;
     --nx-accent: #1d2bb8; --nx-onacc: #ffffff;
     --nx-line: rgba(0,0,0,.09); --nx-hover: rgba(29,43,184,.05); --nx-selbg: rgba(29,43,184,.10);
@@ -49,23 +66,15 @@ export function widgetHtml(): string {
     --nx-boxbg: rgba(0,0,0,.028); --nx-seg: rgba(0,0,0,.05); --nx-segon: rgba(0,0,0,.10);
     --nx-chipbg: rgba(255,255,255,.92);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --nx-ink: #f2f3f5; --nx-num: #e9eaec; --nx-mut: #9096a0; --nx-faint: #6a6f78;
-      --nx-accent: #8ea0ff; --nx-onacc: #0a1030;
-      --nx-line: rgba(255,255,255,.08); --nx-hover: rgba(142,160,255,.09); --nx-selbg: rgba(142,160,255,.18);
-      --nx-track: rgba(255,255,255,.12); --nx-fieldline: rgba(255,255,255,.16);
-      /* boxbg is a dark scrim here (not a white tint like the light-mode
-         value) — the statues now show in full behind these boxes with a
-         brightening "screen" blend, so the box needs to dim what's behind
-         it, not lighten it, or the CARBS/FAT labels wash out. */
-      --nx-boxbg: rgba(0,0,0,.58); --nx-seg: rgba(255,255,255,.06); --nx-segon: rgba(255,255,255,.13);
-      --nx-chipbg: rgba(32,34,40,.94);
-    }
-  }
+  /* The host's declared theme wins: the bridge stamps data-theme on <html>
+     from hostContext (and keeps it updated). The media query is only the
+     fallback for hosts that never declare one. Dark tokens live in
+     NX_DARK_TOKENS below so the two selectors can't drift. */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${NX_DARK_TOKENS} } }
+  :root[data-theme="dark"] { ${NX_DARK_TOKENS} }
   * { box-sizing: border-box; }
   #nexus-root {
-    position: relative; overflow: hidden;
+    position: relative;
     --nx-god-op: .34; --nx-god-blend: multiply;
     /* Both crops are now a genuinely comparable "upper body" region (head to
        just above the hip line for Venus; head + torso + full extended arm,
@@ -78,7 +87,10 @@ export function widgetHtml(): string {
        card — come out equal instead of Venus dwarfing him or vice versa. */
     --nx-venus-w: 24%; --nx-disco-w: 44%;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: var(--nx-ink); background: transparent; padding: 20px 22px;
+    color: var(--nx-ink); background: transparent;
+    /* Base padding + the host-reported safe-area insets (mobile notches,
+       home bars) the bridge writes into the --nx-safe-* vars. */
+    padding: calc(20px + var(--nx-safe-t)) calc(22px + var(--nx-safe-r)) calc(20px + var(--nx-safe-b)) calc(22px + var(--nx-safe-l));
   }
   /* Upper-body busts flank the card — ::before = Venus (left), ::after =
      Discobolus (right). background-size: contain so the whole trimmed
@@ -87,8 +99,15 @@ export function widgetHtml(): string {
      light: shadows read as ink against paper; screen on dark: highlights
      glow off the dark surface) so they read as carved marble instead of a
      flat gray watermark. */
+  /* position: fixed, deliberately: some hosts ratchet the iframe (grow on
+     size-changed, never shrink — verified on Claude web when the editor
+     closes), so the frame can be taller than the content. Anchoring the
+     statues to the iframe viewport bottom makes any excess frame read as
+     intentional card space with the figures at its foot, instead of an
+     orphaned white strip below them. Fixed elements are also invisible to
+     the max-content height measurement, so they can never distort sizing. */
   #nexus-root::before, #nexus-root::after {
-    content: ""; position: absolute; bottom: 0; height: 92%;
+    content: ""; position: fixed; bottom: 0; height: 92%;
     z-index: 0; pointer-events: none; background-repeat: no-repeat;
     background-size: contain; opacity: var(--nx-god-op); mix-blend-mode: var(--nx-god-blend);
   }
@@ -100,7 +119,8 @@ export function widgetHtml(): string {
     right: 0; width: var(--nx-disco-w);
     background-image: url("${DISCOBOLUS_DATA_URI}"); background-position: right bottom;
   }
-  @media (prefers-color-scheme: dark) { #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; } }
+  :root[data-theme="dark"] #nexus-root { --nx-god-op: .4; --nx-god-blend: screen; }
   @media (max-width: 480px) { #nexus-root { --nx-venus-w: 32%; --nx-disco-w: 58%; } }
   #nexus-root > * { position: relative; z-index: 1; }
 
@@ -471,9 +491,21 @@ export function widgetHtml(): string {
       var selMeal = findMeal(showId) || meals[0];
       if (selMeal && !editorClosed) h += editorBox(selMeal);
     } else if (!workouts.length && !weights.length) {
-      h += '<div class="nx-box list"><div class="nx-empty">Nothing logged yet' + (single ? " today" : "") + ". Tell ChatGPT what you ate.</div></div>";
+      h += '<div class="nx-box list"><div class="nx-empty">Nothing logged yet' + (single ? " today" : "") + ". Say what you ate or lifted and it lands here.</div></div>";
     }
     root.innerHTML = h;
+    pushSize();
+  }
+
+  // Explicit size push after every repaint. The bridge's autoResize observer
+  // can miss shrink transitions (editor close), leaving the iframe tall with
+  // dead space at the bottom — this reports the real height each time.
+  function pushSize() {
+    try {
+      if (window.NexusMcpBridge && typeof window.NexusMcpBridge.sendSize === "function") {
+        window.NexusMcpBridge.sendSize();
+      }
+    } catch (e) { /* sizing must never break a paint */ }
   }
 
   function applyData(data) {
@@ -744,11 +776,35 @@ export function widgetHtml(): string {
     console.error("Nexus MCP Apps bridge failed", error);
     if (!hasHydratedToolOutput) {
       root.innerHTML = '<div class="nx-err">Nexus could not connect to the app host.</div>';
+      pushSize();
+    }
+  }
+
+  // Layout signals the host hands us at initialize: platform class for CSS,
+  // safe-area insets into the padding vars. Theme is applied by the bridge
+  // itself (data-theme on <html>).
+  function applyHostLayout() {
+    var ctx = (typeof window.NexusMcpBridge.hostContext === "function" && window.NexusMcpBridge.hostContext()) || null;
+    if (!ctx) return;
+    var doc = document.documentElement;
+    if (ctx.platform) doc.setAttribute("data-platform", ctx.platform);
+    var s = ctx.safeAreaInsets;
+    if (s) {
+      doc.style.setProperty("--nx-safe-t", (s.top | 0) + "px");
+      doc.style.setProperty("--nx-safe-r", (s.right | 0) + "px");
+      doc.style.setProperty("--nx-safe-b", (s.bottom | 0) + "px");
+      doc.style.setProperty("--nx-safe-l", (s.left | 0) + "px");
     }
   }
 
   window.NexusMcpBridge.connect(function (result) {
     hydrateToolResult(result.structuredContent || null, result._meta || {});
+  }).then(function () {
+    applyHostLayout();
+    // Connected but no tool result after a beat (hosts replay it late, or on
+    // some surfaces not at all): paint the empty day frame instead of leaving
+    // two statues and silence. A late result still repaints over this.
+    setTimeout(function () { if (!hasHydratedToolOutput) boot(); }, 2500);
   }).catch(showBridgeError);
   window.addEventListener("load", tryLive);
 })();

@@ -1,0 +1,105 @@
+<!doctype html>
+<title>Nexus widget harness — spec MCP Apps host</title>
+<style>
+  body{font-family:ui-monospace,monospace;background:#141414;color:#ddd;margin:20px}
+  iframe{width:680px;border:1px solid #57c;background:#fff;height:160px;display:block}
+  #log div{padding:1px 0;font-size:12px}
+  .controls{margin:10px 0}
+  button{margin-right:8px}
+</style>
+<h3>Nexus widget harness (MCP Apps spec 2026-01-26 host)</h3>
+<div class="controls">
+  <button id="send-result">send tool-result</button>
+  <button id="send-empty">send empty result</button>
+  <button id="theme-dark">theme → dark</button>
+  <button id="theme-light">theme → light</button>
+  <span id="frame-h"></span>
+</div>
+<iframe id="view" sandbox="allow-scripts"></iframe>
+<div id="log"></div>
+<script>
+const logEl = document.getElementById('log');
+const iframe = document.getElementById('view');
+const frameH = document.getElementById('frame-h');
+function log(s){ const d=document.createElement('div'); d.textContent=new Date().toISOString().slice(11,19)+' '+s; logEl.prepend(d); console.log('[host]', s); }
+
+const TOOL_RESULT = {
+  content: [{ type: 'text', text: '{}' }],
+  structuredContent: {
+    period: { from: '2026-07-14', to: '2026-07-14' },
+    goal: { calories: 2200, protein_g: 160 },
+    logged: [{ id: 'm3', entry_type: 'meal' }],
+    workouts: [],
+    meals: [
+      { id: 'm1', date: '2026-07-14', meal_type: 'breakfast', items: [{ name: 'Whey with yogurt and banana', quantity: 1, calories: 425, protein_g: 60, carbs_g: 30, fat_g: 6 }], totals: { calories: 425, protein_g: 60, carbs_g: 30, fat_g: 6 } },
+      { id: 'm2', date: '2026-07-14', meal_type: 'lunch', items: [{ name: '2 idlis with sambar', quantity: 1, calories: 320, protein_g: 11, carbs_g: 60, fat_g: 4 }], totals: { calories: 320, protein_g: 11, carbs_g: 60, fat_g: 4 } },
+      { id: 'm3', date: '2026-07-14', meal_type: 'snack', items: [{ name: 'Max Protein bar', quantity: 1, calories: 150, protein_g: 10, carbs_g: 15, fat_g: 5 }], totals: { calories: 150, protein_g: 10, carbs_g: 15, fat_g: 5 } }
+    ],
+    weights: []
+  },
+  _meta: {}
+};
+
+let theme = 'light';
+let hostContext = () => ({
+  theme,
+  locale: 'en-US',
+  displayMode: 'inline',
+  platform: 'web',
+  containerDimensions: { width: 680, maxHeight: 900 },
+  safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 },
+});
+
+function post(msg){ iframe.contentWindow.postMessage({ jsonrpc: '2.0', ...msg }, '*'); }
+
+window.addEventListener('message', (ev) => {
+  if (ev.source !== iframe.contentWindow) return;
+  const m = ev.data;
+  if (!m || m.jsonrpc !== '2.0') return;
+
+  if (m.method === 'ui/initialize') {
+    post({ id: m.id, result: {
+      protocolVersion: '2026-01-26',
+      hostInfo: { name: 'nexus-harness', version: '1.0.0' },
+      hostCapabilities: {},
+      hostContext: hostContext(),
+    }});
+    log('ui/initialize → result (theme ' + theme + ')');
+    return;
+  }
+  if (m.method === 'ui/notifications/initialized') { log('view initialized'); return; }
+  if (m.method === 'ui/notifications/size-changed') {
+    const h = m.params && m.params.height;
+    log('size-changed ' + JSON.stringify(m.params));
+    if (typeof h === 'number') { iframe.style.height = h + 'px'; frameH.textContent = 'iframe: ' + h + 'px'; }
+    return;
+  }
+  if (m.method === 'tools/call') {
+    log('tools/call ' + (m.params && m.params.name) + ' ' + JSON.stringify(m.params && m.params.arguments).slice(0, 120));
+    // Echo a minimal success so widget save paths resolve.
+    post({ id: m.id, result: { content: [{ type: 'text', text: '{}' }], structuredContent: { ok: true } } });
+    return;
+  }
+  if (m.id != null && m.method) {
+    post({ id: m.id, result: {} });
+    log('replied {} to ' + m.method);
+    return;
+  }
+  if (m.method) log('notification: ' + m.method);
+});
+
+document.getElementById('send-result').onclick = () => { post({ method: 'ui/notifications/tool-result', params: TOOL_RESULT }); log('sent tool-result'); };
+document.getElementById('send-empty').onclick = () => { post({ method: 'ui/notifications/tool-result', params: { content: [] } }); log('sent empty tool-result'); };
+// Spec shape: params IS the partial McpUiHostContext (changed fields only).
+document.getElementById('theme-dark').onclick = () => { theme = 'dark'; post({ method: 'ui/notifications/host-context-changed', params: { theme: 'dark' } }); log('host-context-changed → dark'); };
+document.getElementById('theme-light').onclick = () => { theme = 'light'; post({ method: 'ui/notifications/host-context-changed', params: { theme: 'light' } }); log('host-context-changed → light'); };
+
+fetch('out/widget.html').then(r => r.text()).then(html => {
+  iframe.srcdoc = html;
+  log('widget mounted (' + html.length + ' bytes)');
+  // Spec flow: host delivers the originating tool result after initialized.
+  // The harness sends it 300ms after mount for the common case; use the
+  // buttons to exercise late/duplicate/empty delivery.
+  setTimeout(() => { post({ method: 'ui/notifications/tool-result', params: TOOL_RESULT }); log('sent tool-result (auto)'); }, 300);
+});
+</script>

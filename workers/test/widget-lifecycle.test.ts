@@ -75,6 +75,8 @@ async function mountWidget() {
       },
     },
     console,
+    setTimeout,
+    clearTimeout,
     Date,
     JSON,
     Math,
