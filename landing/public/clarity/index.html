@@ -95,7 +95,7 @@
 <body>
 <div id="bar"></div>
 <nav>
-  <a href="#tldr">TL;DR</a><a href="#story">The story</a><a href="#protocol">The protocol</a><a href="#decoder">Jargon decoder</a><a href="#matrix">ChatGPT vs Claude</a><a href="#expo">The Expo question</a><a href="#cases">Case files</a><a href="#nexus">Nexus today</a><a href="#rules">Rules</a><a href="#sources">Sources</a>
+  <a href="#tldr">TL;DR</a><a href="#story">The story</a><a href="#protocol">The protocol</a><a href="#decoder">Jargon decoder</a><a href="#matrix">ChatGPT vs Claude</a><a href="#expo">The Expo question</a><a href="#cases">Case files</a><a href="#nexus">Nexus today</a><a href="#rules">Rules</a><a href="#platform-bugs">Their bugs</a><a href="#sources">Sources</a>
 </nav>
 <main>
 
@@ -354,8 +354,40 @@
   </ol></div>
 </section>
 
+<section id="platform-bugs">
+  <div class="num">09 · Their bugs, not yours</div>
+  <h2>Known platform flaws — check here before blaming your code</h2>
+  <p class="lead">Both hosts are young products shipping fast. Some failures are <em>theirs</em>, well documented by other developers hitting the same wall. Scan this list first; it's cheaper than a debugging spiral.</p>
+
+  <h3>ChatGPT-side</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Flaw</th><th>What you see</th><th>Status · receipt</th></tr>
+    <tr><td><b>Mobile app drops widgets on multi-call turns</b></td><td>Turn with several tool calls renders only 1–2 widgets (or none) in the native app; same turn works on web</td><td class="meh">Open since Feb 2026 · <a href="https://community.openai.com/t/multiple-widgets-in-a-single-chat-turn-fail-to-render-inside-the-native-chatgpt-mobile-app/1373880">community thread</a> — the documented version of our iOS single-call rule</td></tr>
+    <tr><td><b>Dev mode breaks resource-bound widgets</b></td><td>"Error loading app — Runtime error" on every standard-metadata widget in developer mode; production unaffected. Hit Booking.com too</td><td class="meh">Support case open since May · <a href="https://community.openai.com/t/runtime-error-on-all-resource-widgets-in-developer-mode/1379591">thread</a> — cost us half a day as a red herring</td></tr>
+    <tr><td><b>No resource caching</b></td><td>ChatGPT re-downloads <em>every</em> registered resource (~each 150KB+) on <em>every</em> turn</td><td class="meh">Measured in the same thread — the reason widgets must stay lean</td></tr>
+    <tr><td><b>Redundant tool-result redelivery</b></td><td>Widget flickers / re-renders when the model finishes answering; state resets if you rehydrate naively</td><td class="meh"><a href="https://community.openai.com/t/app-widget-flickers-rerenders-when-chatgpt-is-done-answering/1373762">thread</a> — why Nexus dedupes repeated deliveries by signature</td></tr>
+    <tr><td><b>Double widget bubble</b></td><td>One tool call, two stacked widget cards</td><td class="meh"><a href="https://community.openai.com/t/double-widget-bubble-rendered-for-a-single-mcp-tool-call/1382383">thread</a></td></tr>
+    <tr><td><b>Stale tool→widget binding</b></td><td>Server updated, widget stays old (or renders text-only); "Refresh" in settings doesn't rebuild the binding</td><td class="no">Undocumented officially — our repeated finding; fix is delete + recreate the app</td></tr>
+    <tr><td><b>Store entitlement glitch</b></td><td>Some directory users lose access to your tools after the first call</td><td class="meh"><a href="https://community.openai.com/t/some-chatgpt-app-store-users-lose-access-to-exposed-mcp-tools-after-one-tool-call/1384922">thread</a></td></tr>
+  </table></div>
+
+  <h3>Claude-side</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Flaw</th><th>What you see</th><th>Status · receipt</th></tr>
+    <tr><td><b>Multi-call turns mount no widget</b></td><td>Ask for anything before the widget-bearing call ("read history, then log") → whole tool run folds into the thinking block, zero iframes. Single-call turn: renders</td><td class="no">Verified live on Nexus, 14 Jul — undocumented; the answer to "I just said read history before logging!!"</td></tr>
+    <tr><td><b>Blank render despite correct protocol</b></td><td>Tool runs, resource fetched, capability negotiated — iframe never mounts. Same server renders fine in MCP Inspector / test harness</td><td class="meh">Open since Apr · <a href="https://github.com/modelcontextprotocol/ext-apps/issues/615">ext-apps #615</a>, <a href="https://github.com/modelcontextprotocol/ext-apps/issues/671">#671</a> (claude.ai + Desktop/Windows)</td></tr>
+    <tr><td><b>Hydration fails on mobile / params never arrive</b></td><td>Widget shell loads, data never comes. GitHub's own form widget "collapses immediately — parameters never hydrate" in Claude clients</td><td class="no">Open · <a href="https://github.com/github/github-mcp-server/issues/2823">github-mcp-server #2823</a> — same family as Nexus's Claude-iOS blank card</td></tr>
+    <tr><td><b>iOS rehydration is different on purpose</b></td><td>Reopened conversations lazy-mount widgets out of order; on iOS <code>toolInfo.id</code> is <code>undefined</code>, so there's no stable instance key; <code>tool-result</code> replay "can be slow"</td><td class="meh">Admitted in <a href="https://claude.com/docs/connectors/building/mcp-apps/instance-supersession">Anthropic's own docs</a>, which recommend timeout fallbacks</td></tr>
+    <tr><td><b>Big results silently skip the widget</b></td><td>Result &gt; ~150K chars with code-execution on → widget receives a file pointer instead of data, never hydrates</td><td class="meh">Documented · <a href="https://claude.com/docs/connectors/building/mcp-apps/troubleshooting">troubleshooting guide</a></td></tr>
+    <tr><td><b>Widgets in Claude Code render empty</b></td><td>"Widget from …" bordered box with nothing inside, in Claude Code desktop</td><td class="meh"><a href="https://github.com/anthropics/claude-code/issues/65653">claude-code #65653</a></td></tr>
+    <tr><td><b>Connector infra wobbles</b></td><td>Clusters of connector/MCP incidents (April 2026 had several in one month) — everything fails at once, nothing you deployed changed</td><td class="meh">Tracked by <a href="https://sunpeak.ai/blogs/debugging-claude-connectors/">third-party monitoring</a>; check status pages before debugging</td></tr>
+  </table></div>
+
+  <div class="card tint"><p style="margin-bottom:6px"><strong>The frustration-saving heuristic:</strong> if your widget worked yesterday and you deployed nothing — it's them. If it works on one surface (web) and not another (mobile, dev mode, Claude Code) with identical code — it's almost certainly them. Your code runs in four host runtimes owned by two companies shipping weekly; <mark>an unchanged widget breaking is expected weather, not your failure</mark>.</p><p>What makes it diagnosable in minutes instead of days: fail visibly (rule 4), test surfaces separately (rule 6), and keep this page's receipts handy so you can say "known issue, moving on".</p></div>
+</section>
+
 <section id="sources">
-  <div class="num">09 · Receipts</div>
+  <div class="num">10 · Receipts</div>
   <h2>Sources worth bookmarking</h2>
   <div class="srcs">
   <h3>The standard</h3>
