@@ -75,7 +75,7 @@
       "user_prompt": "I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7 reps, and 55kg for 6 reps. Log it in Nexus.",
       "file_attachment_urls": null,
       "tools_triggered": "nexus_log_entries",
-      "expected_output": "Creates a workout entry with exercise_key bench_press, three sets, an entry id, and total_sets of 3, then confirms the workout was logged.",
+      "expected_output": "Creates a workout entry with exercise_key bench_press_barbell, three sets, an entry id, a state_version, and total_sets of 3, then confirms the workout was logged.",
       "expected_output_url": null
     },
     {
@@ -91,7 +91,7 @@
       "user_prompt": "Actually that first bench press set was 9 reps, not 8. Fix it in Nexus.",
       "file_attachment_urls": null,
       "tools_triggered": "nexus_get_history, nexus_update_entry",
-      "expected_output": "Finds the relevant entry id, sends a full replacement with the corrected set data, and confirms the entry was updated.",
+      "expected_output": "Reads the relevant entry id and state_version, then calls nexus_update_entry with a fresh mutation_id, expected_state_version, and the full corrected set data; confirms the update only after the tool succeeds.",
       "expected_output_url": null
     },
     {

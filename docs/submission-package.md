@@ -74,9 +74,9 @@ Test cases:
 
 | Scenario | Prompt | Tools | Expected output |
 |---|---|---|---|
-| User logs a strength training session | `I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7, and 55kg for 6. Log it in Nexus.` | `nexus_log_entries` | Server returns a workout entry ID, `exercise_key`, and set count. ChatGPT confirms the workout was logged. |
+| User logs a strength training session | `I just did bench press, 3 sets: 60kg for 8 reps, 60kg for 7, and 55kg for 6. Log it in Nexus.` | `nexus_log_entries` | Server returns a workout entry ID, `exercise_key`, `state_version`, and set count. ChatGPT confirms the workout was logged only after the tool succeeds. |
 | User logs a meal from natural language | `I ate 3 boiled eggs for dinner. Estimate macros and log it to Nexus.` | `nexus_log_entries` | Server returns a meal entry ID, item-level foods, estimated calories/macros, and server-computed totals. |
-| User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `nexus_get_history`, `nexus_update_entry` | ChatGPT finds the entry, sends the full replacement data, and confirms the update result with the corrected rep count. |
+| User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `nexus_get_history`, `nexus_update_entry` | ChatGPT reads the entry ID and `state_version`, then sends a fresh `mutation_id`, `expected_state_version`, and full replacement data; it confirms the correction only after the update succeeds. |
 | User checks their friend code | `What's my Nexus friend code?` | `nexus_manage_friends` | Server returns `your_code`, current friends, and pending requests. ChatGPT shows the friend code. |
 | User sets a nutrition goal | `Set my Nexus daily goal to 2000 calories and 120g protein.` | `nexus_set_goal` | Server creates a new goal record, preserves prior goals as history, and returns the updated targets. |
 
