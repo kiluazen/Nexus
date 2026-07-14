@@ -89,6 +89,14 @@ globalThis.NexusMcpBridge = {
     const height = Math.ceil(doc.getBoundingClientRect().height);
     doc.style.height = prev;
     void app.sendSizeChanged({ width: Math.ceil(window.innerWidth), height });
+    // ChatGPT's extension channel. Standard size-changed is grow-only on the
+    // hosts we've measured; where the host injects window.openai, its native
+    // height notification also resizes the frame back down. Feature-detected:
+    // absent on Claude and every other host, so this is a no-op there.
+    const oai = (globalThis as { openai?: { notifyIntrinsicHeight?: (h: number) => void } }).openai;
+    if (oai && typeof oai.notifyIntrinsicHeight === "function") {
+      try { oai.notifyIntrinsicHeight(height); } catch { /* best-effort */ }
+    }
   },
 };
 
