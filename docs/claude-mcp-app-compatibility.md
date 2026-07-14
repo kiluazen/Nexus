@@ -1,5 +1,7 @@
 # Nexus on Claude: isolated deployment, shared modern MCP Apps contract
 
+> Current architecture reference: `docs/cross-host-architecture.md`. This file records the Claude deployment decision; where implementation details differ, the cross-host architecture and executable contract tests are authoritative.
+
 Status: implemented and deployed.
 
 Last updated: 2026-07-14

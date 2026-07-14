@@ -112,9 +112,9 @@
   <div class="card tint"><ul class="tldr">
     <li>There is now <strong>one open protocol</strong> for widgets inside AI chats: <strong>MCP Apps</strong>, an official MCP extension since 26 Jan 2026. Your server ships HTML; the platform runs it in a sandboxed iframe; they talk JSON-RPC over <code>postMessage</code>.</li>
     <li><strong>ChatGPT and Claude both run it.</strong> ChatGPT keeps extra <code>openai/*</code> features on top (not deprecated, just optional). Claude is closest to the pure standard.</li>
-    <li>The Expo-like thing you asked for <strong>exists and is official</strong>: the <code>@modelcontextprotocol/ext-apps</code> SDK. <code>registerAppTool()</code> emits both platforms' metadata; <code>App.connect()</code> auto-detects which host it's inside. Nexus currently hand-rolls most of what it does.</li>
-    <li>The single biggest display rule on <em>both</em> platforms: <mark>the widget-bearing tool call must be a clean, standalone call</mark>. Multi-tool turns get folded away (Claude) or break rendering (ChatGPT iOS).</li>
-    <li>Nexus today: ChatGPT web <b>works</b>, Claude web <b>works</b>, Claude iOS <b>shell only</b> (open bug, diagnosable via Safari→iPhone inspector), ChatGPT iOS <b>untested since the rewrite</b>.</li>
+    <li>The Expo-like thing you asked for <strong>exists and is official</strong>: the <code>@modelcontextprotocol/ext-apps</code> SDK. Nexus now uses its official <code>App</code> client on both hosts; one shared protocol bridge, no hand-rolled fallback.</li>
+    <li>Tool sequencing is a model decision, not an MCP-server primitive. Nexus never distorts read/write semantics to work around a host's widget-placement bug: correctness and truthful mutation results come first.</li>
+    <li>Nexus today: the shared MCP Apps implementation has rendered on ChatGPT web/iOS and Claude web/iOS. Each deployment keeps only its host-specific policy and optional enhancement layer.</li>
     <li>Nothing you felt was imaginary: the platforms genuinely rewrote their format mid-flight (Oct 2025 → Jan 2026), the docs lag the hosts, and dev mode has its own bugs. The fix is testing on real hosts + a few hard rules (section 08).</li>
   </ul></div>
 </section>
@@ -129,7 +129,7 @@
     <li><span class="when">NOV 2025</span><span class="what"><strong>SEP-1865 proposed</strong> — the mcp-ui authors + OpenAI + Anthropic take it to the MCP standards process.</span></li>
     <li><span class="when">26 JAN 2026</span><span class="what"><strong>MCP Apps becomes an official MCP extension</strong>, with the <code>@modelcontextprotocol/ext-apps</code> SDK. Claude (web+desktop) supports it day one; ChatGPT follows within days; VS Code, Goose, JetBrains after.</span></li>
     <li><span class="when">SPRING 2026</span><span class="what"><strong>ChatGPT adopts the standard keys</strong> (<code>_meta.ui.*</code>, <code>text/html;profile=mcp-app</code>) and demotes its own keys to "compatibility aliases + ChatGPT-only extensions". Official line: lead with the standard, no plans to deprecate <code>openai/*</code>.</span></li>
-    <li><span class="when">JUL 2026</span><span class="what"><strong>Nexus rewrites to standard-only</strong> — one bad day of "Runtime error" (a crashing bundled runtime, not the protocol), now rendering on ChatGPT web and Claude web. Claude iOS still fighting us.</span></li>
+    <li><span class="when">JUL 2026</span><span class="what"><strong>Nexus converges on the official standard client</strong> — one <code>ext-apps</code> App bridge on both hosts, separate host deployments, shared tools/data/widget core, and successful renders across web and iOS.</span></li>
   </ul>
   <p>So when the docs and skills files contradict each other: they were written in different eras. Anything mentioning <code>text/html+skybridge</code> or <em>only</em> <code>window.openai</code> is era-2 material. Anything with <code>_meta.ui.resourceUri</code> and <code>ui/initialize</code> is current.</p>
 </section>
@@ -141,7 +141,7 @@
 
   <h3>Server side — three declarations</h3>
   <ol>
-    <li><strong>A UI resource.</strong> An MCP resource whose URI uses the <code>ui://</code> scheme (e.g. <code>ui://widget/nexus-today-v13.html</code>) and whose mimeType is <code>text/html;profile=mcp-app</code>. Its text is your entire widget — HTML + all JS inlined, because the sandbox blocks most external fetches.</li>
+    <li><strong>A UI resource.</strong> An MCP resource whose URI uses the <code>ui://</code> scheme (e.g. <code>ui://widget/nexus-today-v15.html</code>) and whose mimeType is <code>text/html;profile=mcp-app</code>. Its text is your entire widget — HTML + all JS inlined, because the sandbox blocks most external fetches.</li>
     <li><strong>A pointer on the tool.</strong> The tool that should render the widget carries <code>_meta.ui.resourceUri</code> naming that resource. Tool fires → platform fetches the resource → mounts the iframe.</li>
     <li><strong>Policy on the resource.</strong> <code>_meta.ui.csp</code> (which hosts the iframe may fetch/connect to), <code>_meta.ui.domain</code> (a stable serving origin, each platform has its own rules), <code>_meta.ui.prefersBorder</code> (chrome hint).</li>
   </ol>
@@ -242,9 +242,9 @@
     <tr><td><b>mcp-use</b></td><td>Fullstack framework + local Inspector that emulates both ChatGPT and Claude runtimes (protocol toggle); React hooks abstract host differences</td><td class="meh">Useful, esp. the Inspector. Young.</td></tr>
     <tr><td><b>Skybridge (framework)</b></td><td>Community React framework, ChatGPT-centric (we trialed it for Nexus)</td><td class="meh">ChatGPT-first, not a cross-host answer</td></tr>
     <tr><td><b>mcp-ui</b></td><td>The ancestor library</td><td class="no">Historical — read, don't adopt</td></tr>
-    <tr><td><b>Hand-rolled bridge</b></td><td>What Nexus ChatGPT runs today (873 bytes)</td><td class="meh">Fine as a scalpel; you own every spec change forever</td></tr>
+    <tr><td><b>Hand-rolled bridge</b></td><td>A temporary diagnostic path Nexus used during migration</td><td class="no">Retired; production uses the official client on both hosts</td></tr>
   </table></div>
-  <p>Honest caveat from our own week: the one time we bundled the official runtime <em>inlined into the widget HTML</em> for ChatGPT, it crashed ("Runtime error") and the tiny hand-rolled shim fixed it. That crash was never root-caused — likely a bundling artifact, possibly a real ChatGPT bug worth filing. So "bet on ext-apps" comes with "and root-cause that crash before re-adopting it on ChatGPT". It already runs Nexus's Claude widget in production today.</p>
+  <p>Historical caveat from our own week: one early inlined official-runtime build crashed in ChatGPT and a tiny direct shim helped isolate the failure. The final architecture did not preserve that fork: the build issue was removed and production now uses the official client on both targets.</p>
   <p>And the Expo analogy has the same fine print as actual Expo: the shared layer covers the protocol, but <strong>each store keeps its own rules</strong> — ChatGPT's review process and <code>openai/*</code> extras, Claude's domain hash and connector flow. You can share the app; you can't share the paperwork.</p>
 </section>
 
@@ -258,10 +258,10 @@
     <p class="rule">Rule: the mimeType is a handshake, not a label.</p>
   </div>
 
-  <div class="case"><span class="status closed">CLOSED</span>
+  <div class="case"><span class="status closed">CLOSED · historical</span>
     <p class="sym">"Error loading app — Runtime error" on ChatGPT, every turn</p>
-    <p class="why">The 438&nbsp;KB official ext-apps browser runtime, inlined into the widget document, crashed at boot. Replaced with an 873-byte direct implementation of the same <code>ui/*</code> handshake → renders. (Why the big bundle crashes inlined: still unexplained. A same-day community thread blaming dev mode was a red herring for us.)</p>
-    <p class="rule">Rule: when a widget dies at boot, suspect the biggest script you inlined.</p>
+    <p class="why">An early bundled build of the official client crashed, so Nexus temporarily used a tiny direct implementation. That was not the final architecture: production now runs the official <code>ext-apps</code> App class on both hosts.</p>
+    <p class="rule">Rule: isolate the bundle/build failure; do not turn a temporary shim into architecture.</p>
   </div>
 
   <div class="case"><span class="status closed">CLOSED</span>
@@ -276,16 +276,16 @@
     <p class="rule">Rule: bump the <code>ui://…vN</code> version on every behavioral change. If ChatGPT still won't update: delete + recreate the app, refresh won't do it.</p>
   </div>
 
-  <div class="case"><span class="status closed">CLOSED · found today</span>
-    <p class="sym">Claude: tool ran fine, no widget anywhere in the chat</p>
-    <p class="why">The prompt was "first read history, then log". Claude made multiple tool calls in one turn (tool search → history → log), folded the whole run into the collapsed thinking block, and mounted <b>zero</b> iframes. The identical log as a single standalone call mounts the widget (verified: 1 iframe vs 0, same connector, same day).</p>
-    <p class="rule">Rule: widget tools want clean single-call turns — on ChatGPT iOS AND Claude. Nexus's server instructions already demand this; they now provably apply to Claude too.</p>
+  <div class="case"><span class="status closed">CORRECTED</span>
+    <p class="sym">Multi-tool turns were mistaken for an application constraint</p>
+    <p class="why">Claude can mount the widget after a history→log sequence, but may place it inside collapsed tool/reasoning UI. ChatGPT iOS has separately dropped cards on some multi-call turns. Those are host presentation behaviors, not permission to skip a requested mutation or claim success without a successful tool result.</p>
+    <p class="rule">Rule: never change data semantics to optimize card placement. Read when correctness requires it; never fabricate mutation success.</p>
   </div>
 
-  <div class="case"><span class="status open">OPEN</span>
-    <p class="sym">Claude iOS: statues render, data never arrives</p>
-    <p class="why">The HTML shell loads (CSS paints) but no tool result reaches the widget handler. Widget code is exonerated: it fully renders under a spec-correct mock host and on Claude web. Two suspects remain: iOS never completes the handshake, or never replays <code>tool-result</code>. The widget currently fails silent in both cases (no timeout, no default paint), so a screenshot can't tell them apart.</p>
-    <p class="rule">Next: plug the phone into the Mac → Safari → Develop → Claude WKWebView → watch the console. And ship the graceful-degradation fix regardless.</p>
+  <div class="case"><span class="status closed">CLOSED</span>
+    <p class="sym">Claude iOS once painted the shell without data</p>
+    <p class="why">The official App handshake, connect timeout, default paint, and correct Claude domain are now deployed; the hydrated card subsequently rendered on Claude iOS.</p>
+    <p class="rule">Rule: implement the complete lifecycle and verify on the actual mobile host.</p>
   </div>
 
   <div class="case"><span class="status open">OPEN · latent</span>
@@ -304,7 +304,7 @@
     <text x="90" y="26" text-anchor="middle" fill="var(--accent)" font-weight="700">CHATGPT</text>
     <text x="90" y="44" text-anchor="middle" fill="var(--ink)">worker: nexus-mcp</text>
     <text x="90" y="59" text-anchor="middle" fill="var(--ink-soft)">mcp.nexus.kushalsm.com</text>
-    <text x="90" y="76" text-anchor="middle" fill="var(--ink)">873-byte shim · InstantDB live</text>
+    <text x="90" y="76" text-anchor="middle" fill="var(--ink)">official App class · InstantDB live</text>
     <rect x="188" y="8" width="164" height="86" rx="10" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
     <text x="270" y="26" text-anchor="middle" fill="var(--accent)" font-weight="700">CLAUDE</text>
     <text x="270" y="44" text-anchor="middle" fill="var(--ink)">worker: nexus-mcp-claude</text>
@@ -323,18 +323,17 @@
   </figure>
   <div class="tablewrap"><table>
     <tr><th>Surface</th><th>Status</th><th>Note</th></tr>
-    <tr><td>ChatGPT web</td><td class="ok">Renders</td><td>standard-only after the rewrite; resubmission pending</td></tr>
-    <tr><td>ChatGPT iOS</td><td class="meh">Untested</td><td>test before resubmitting — history says iOS punishes assumptions</td></tr>
-    <tr><td>Claude web</td><td class="ok">Renders</td><td>hydration + autoResize verified live today</td></tr>
-    <tr><td>Claude iOS</td><td class="no">Shell only</td><td>open case above</td></tr>
+    <tr><td>ChatGPT web</td><td class="ok">Renders</td><td>official App bridge + optional ChatGPT live layer</td></tr>
+    <tr><td>ChatGPT iOS</td><td class="ok">Renders</td><td>direct calls verified; multi-call card placement remains a host issue</td></tr>
+    <tr><td>Claude web</td><td class="ok">Renders</td><td>official App bridge, static first-party snapshot</td></tr>
+    <tr><td>Claude iOS</td><td class="ok">Renders</td><td>handshake and data hydration verified</td></tr>
   </table></div>
   <h3>Open risks being tracked (the short list)</h3>
   <ul>
-    <li>The ChatGPT shim is off-spec in three tolerated-for-now ways: wrong <code>ui/initialize</code> field names, ignores host requests (teardown), never sends <code>size-changed</code>.</li>
-    <li>Failure is silent by design: no connect timeout, no default paint, no visible error — this is exactly why Claude iOS is hard to diagnose.</li>
+    <li>ChatGPT iOS can still mishandle widget presentation after multi-tool turns; Nexus preserves correct tool semantics and leaves presentation repair to the host.</li>
+    <li>Mutation retries and old mounted cards are handled in the shared data layer with durable mutation identities and optimistic state versions.</li>
     <li>Dropping the <code>openai/*</code> extras also dropped real product polish ("Logging to Nexus…" status line, widget description) that has no standard replacement.</li>
-    <li>Tests validate the bridge against its own mock, not against either real host — the only thing that has actually broken all week is real-host behavior.</li>
-    <li>Prod is running code that exists only in a dirty working tree. Commit it.</li>
+    <li>Mocks validate protocol contracts; the real-host smoke matrix remains mandatory before each release.</li>
   </ul>
 </section>
 
@@ -343,12 +342,12 @@
   <h2>Rules to build by</h2>
   <div class="card"><ol>
     <li><strong>The standard is the base; extensions are per-store paperwork.</strong> Declare with <code>ui.*</code>; add <code>openai/*</code> only for ChatGPT-only features you actually want. That's not a fallback — there's nothing it falls back from.</li>
-    <li><strong>One widget tool call per turn.</strong> Bake it into server instructions for every host. Reads answer in text; the card renders on writes.</li>
+    <li><strong>Correctness outranks card placement.</strong> Tool sequencing belongs to the model and host. Read state when needed, execute requested writes, and never claim success without a successful mutation result.</li>
     <li><strong>Bump the <code>ui://…vN</code> URI on every behavioral change.</strong> Caches are ruthless; version numbers are free.</li>
     <li><strong>Fail visibly.</strong> Timeout the handshake, paint a default state, show one quiet line when data never arrives. A blank card on someone's phone is undebuggable by definition.</li>
     <li><strong>Keep payloads lean.</strong> Claude hard-stops hydration past ~150K chars; ChatGPT re-downloads your resources every turn.</li>
     <li><strong>Trust only real hosts.</strong> Mocks prove your code is self-consistent, never that it works. Smoke-test on ChatGPT web, ChatGPT iOS, Claude web, Claude iOS before calling anything done.</li>
-    <li><strong>When mobile misbehaves, attach an inspector, don't guess.</strong> Claude iOS = Safari Web Inspector over cable. ChatGPT iOS = the single-call rule first.</li>
+    <li><strong>When mobile misbehaves, attach an inspector, don't guess.</strong> A host bug is evidence to report, not a constraint to encode into application semantics.</li>
     <li><strong>Deploy → verify → commit → push.</strong> Same hour. Prod running uncommitted code is how you lose a working state you can't rebuild.</li>
     <li><strong>Reread the docs monthly.</strong> This ecosystem shipped three formats in nine months. Assume this page has a half-life; check the sources below when something smells stale.</li>
   </ol></div>
@@ -362,7 +361,7 @@
   <h3>ChatGPT-side</h3>
   <div class="tablewrap"><table>
     <tr><th>Flaw</th><th>What you see</th><th>Status · receipt</th></tr>
-    <tr><td><b>Mobile app drops widgets on multi-call turns</b></td><td>Turn with several tool calls renders only 1–2 widgets (or none) in the native app; same turn works on web</td><td class="meh">Open since Feb 2026 · <a href="https://community.openai.com/t/multiple-widgets-in-a-single-chat-turn-fail-to-render-inside-the-native-chatgpt-mobile-app/1373880">community thread</a> — the documented version of our iOS single-call rule</td></tr>
+    <tr><td><b>Mobile app drops widgets on multi-call turns</b></td><td>Turn with several tool calls renders only 1–2 widgets (or none) in the native app; same turn works on web</td><td class="meh">Open since Feb 2026 · <a href="https://community.openai.com/t/multiple-widgets-in-a-single-chat-turn-fail-to-render-inside-the-native-chatgpt-mobile-app/1373880">community thread</a> — a host bug Nexus does not encode into tool semantics</td></tr>
     <tr><td><b>Dev mode breaks resource-bound widgets</b></td><td>"Error loading app — Runtime error" on every standard-metadata widget in developer mode; production unaffected. Hit Booking.com too</td><td class="meh">Support case open since May · <a href="https://community.openai.com/t/runtime-error-on-all-resource-widgets-in-developer-mode/1379591">thread</a> — cost us half a day as a red herring</td></tr>
     <tr><td><b>No resource caching</b></td><td>ChatGPT re-downloads <em>every</em> registered resource (~each 150KB+) on <em>every</em> turn</td><td class="meh">Measured in the same thread — the reason widgets must stay lean</td></tr>
     <tr><td><b>Redundant tool-result redelivery</b></td><td>Widget flickers / re-renders when the model finishes answering; state resets if you rehydrate naively</td><td class="meh"><a href="https://community.openai.com/t/app-widget-flickers-rerenders-when-chatgpt-is-done-answering/1373762">thread</a> — why Nexus dedupes repeated deliveries by signature</td></tr>

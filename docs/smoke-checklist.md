@@ -1,19 +1,22 @@
 # Nexus widget smoke checklist
 
 Run after ANY change to the widget document, bridge, or tool/resource metadata.
-One prompt per surface; the widget-bearing call must be the only tool call in
-its turn (hosts drop or fold the card otherwise — see clarity page, case files).
+Test both a direct mutation and a read-then-mutate sequence. Correctness is
+never constrained to work around a host's card-placement or rendering bug.
 
-Test prompt: "I just drank one glass of water, log it in Nexus as a zero-calorie
-snack. Do not call any other tool."
+Direct prompt: "I just drank one glass of water; log it in Nexus as a
+zero-calorie snack."
+
+Sequenced prompt: "First check today's Nexus history for duplicates, then log
+one glass of water as a zero-calorie snack if it is not already there."
 
 | # | Surface | What to verify |
 |---|---------|----------------|
 | 1 | Local harness (`npm run harness` in workers/) | mounts · handshake logs · tool-result paints · `size-changed` grows AND shrinks · theme buttons flip the card |
-| 2 | ChatGPT web | card renders · theme matches ChatGPT's · editor opens/closes · save round-trips |
-| 3 | ChatGPT iOS | card renders at all (historically the flakiest surface) |
-| 4 | Claude web | card renders · theme matches · editor close leaves statues at card foot (frame ratchet is expected, not a bug) |
-| 5 | Claude iOS | card renders + data hydrates (WKWebView; inspect via Mac Safari → Develop if blank) |
+| 2 | ChatGPT web | direct card renders · sequenced mutation is truthful · editor save round-trips with state_version |
+| 3 | ChatGPT iOS | direct card renders · sequenced mutation succeeds even if the host mishandles its card |
+| 4 | Claude web | direct + sequenced mutations succeed · theme matches · stale editor is rejected |
+| 5 | Claude iOS | direct + sequenced mutations succeed · widget hydrates when host presents it |
 
 ## Deploy rules (learned the hard way, 2026-07-14)
 

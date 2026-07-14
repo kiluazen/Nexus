@@ -297,7 +297,7 @@ interface NexusWidgetResult {
 }
 ```
 
-`stateVersion` is not required for the first extraction step, but it is the clean way to reject late or duplicated snapshots once cross-host editing becomes more complex.
+`stateVersion` is required on every editable entry snapshot. Widget edits send it back as `expected_state_version`; the server rejects an edit from an older mounted card and triggers a fresh read. Every mutation also carries a caller-generated `mutation_id`; a durable receipt replays exact retries and rejects reuse with different arguments. These are shared data primitives, not host adapters.
 
 ## Target source structure
 
@@ -470,7 +470,7 @@ An OAuth success against one endpoint is not evidence for the other because the 
 
 ### 7. Real-host canaries
 
-Mocks prove our contract; they do not prove the hosts. Before declaring either deployment healthy, run a direct single-tool logging call in the real host and verify:
+Mocks prove our contract; they do not prove the hosts. Before declaring either deployment healthy, run both a direct logging call and a read-then-log sequence in the real host and verify:
 
 - tool execution succeeds;
 - widget data paints;
@@ -540,7 +540,7 @@ Rollback is also independent: restore the previous Worker deployment and resourc
 1. Route both host mutation results through the shared reducer.
 2. Verify Claude edit and toggle behavior in a real conversation.
 3. Verify InstantDB updates cannot be overwritten by stale ChatGPT boot data.
-4. Add `stateVersion` only if ordering remains ambiguous.
+4. Verify required `stateVersion` conflict handling and durable mutation-receipt replay.
 
 ### Phase 5 — Deploy independently
 
@@ -601,4 +601,3 @@ The restructuring is complete when:
 - [OpenAI Apps SDK: Build your MCP server](https://developers.openai.com/apps-sdk/build/mcp-server)
 - [Claude connectors: MCP Apps cross-compatibility](https://claude.com/docs/connectors/building/mcp-apps/cross-compatibility)
 - [MCP Apps specification, 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
-

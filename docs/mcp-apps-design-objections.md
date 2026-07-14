@@ -1,5 +1,7 @@
 # Objections to the current Nexus MCP Apps design
 
+> Historical review snapshot. The bridge fork, lifecycle gaps, silent hydration, and single-host assumptions described below were inputs to the current implementation and are not current-state claims. See `docs/cross-host-architecture.md` and `docs/chatgpt-experience-plan.md` for the active design.
+
 2026-07-14. Review of the standard-only rewrite (uncommitted working tree, deployed to prod at 10:43 UTC). The rewrite's direction is right — ChatGPT renders pure MCP Apps, verified live — but the execution has holes. Each objection below has a severity and a concrete ask.
 
 ## Where things stand (evidence, not opinion)
