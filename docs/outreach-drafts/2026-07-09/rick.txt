@@ -1,0 +1,12 @@
+Hi Rick,
+
+You pipe years of Apple Health data into Claude (https://rickmontero.com/field-notes/ai-fitness-tracker-claude-apple-health-notion) for reviews. Reading works. The writing still lives in Notion.
+
+I built Nexus, a plugin inside ChatGPT: tell ChatGPT what you ate and it keeps the record and the trends. Log and review in one place.
+
+Run it for a week next to your setup and tell me which one you open.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

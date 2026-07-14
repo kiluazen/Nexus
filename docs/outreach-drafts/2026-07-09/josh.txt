@@ -1,0 +1,14 @@
+Hi Josh,
+
+You engineered a JSON scaffold (https://jodavaho.io/posts/dieting-differential-equations-3.html) so ChatGPT would keep a running calorie total, then plotted the exports by hand.
+
+That scaffold was you doing the one thing the model couldn't: remember.
+
+ChatGPT runs plugins now, so I built Nexus as one. Same chat, but the log persists and the charts are just there.
+
+Curious if it holds up against your scaffold.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

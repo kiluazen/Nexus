@@ -1,0 +1,12 @@
+Hi Nagarjun,
+
+You built food-tracker-mcp (https://github.com/nagarjun226/food-tracker-mcp) to give Claude a food log it could write to.
+
+ChatGPT quietly rolled out plugins, so I made the same bet there: Nexus. You tell ChatGPT what you ate, and the plugin keeps the history and goals.
+
+How does it stack up against your MCP?
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

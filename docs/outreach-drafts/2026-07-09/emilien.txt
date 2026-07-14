@@ -1,0 +1,12 @@
+Hi Emilien,
+
+Your Claude, n8n and Hexis pipeline (https://www.emottet.com/posts/blog_post_crew_meal/) is the most engineered nutrition loop I've seen. You clearly needed this to be durable.
+
+I built Nexus as a ChatGPT plugin: a tracker living in the chat itself, with a log that persists and no pipeline to babysit.
+
+What would it need before you'd retire a node of yours?
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

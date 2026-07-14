@@ -32,7 +32,7 @@ read/destructive/openWorld hints.
 | Screenshots | ✅ | `landing/public/assets/nexus-calorie-logged-screenshot.png` is cropped to the OpenAI requirement: exactly 706 px wide, above 400 px tall, and no prompt/debug/browser chrome. |
 | Test prompts with expected responses | ✅ | Use the examples in `https://nexus.kushalsm.com/usage-guide/` plus the Testing section draft below |
 | Demo OAuth credentials (no MFA) | ✅ | OAuth supports the reviewer username/password on the Nexus consent page; supply the credentials in the form |
-| Tool output schemas | ✅ | `workers/src/mcp.ts` declares output schemas for every listed tool; rescan in Platform after each Worker deploy and do not submit while the dashboard still shows output-schema warnings. |
+| Tool output schemas | ✅ | `workers/src/mcp.ts` declares output schemas for all five tools; rescan in Platform after each Worker deploy and do not submit while the dashboard still shows output-schema warnings. |
 | `resource` parameter echoed into token `aud` claim | ✅ | workers-oauth-provider does this; verify at test time |
 | Identity verification on platform.openai.com | ✅ | Submission accepted into review on July 4, 2026 |
 
@@ -78,7 +78,7 @@ Test cases:
 | User logs a meal from natural language | `I ate 3 boiled eggs for dinner. Estimate macros and log it to Nexus.` | `nexus_log_entries` | Server returns a meal entry ID, item-level foods, estimated calories/macros, and server-computed totals. |
 | User corrects a previous entry | `Actually that first bench press set was 9 reps, not 8.` | `nexus_get_history`, `nexus_update_entry` | ChatGPT finds the entry, sends the full replacement data, and confirms the update result with the corrected rep count. |
 | User checks their friend code | `What's my Nexus friend code?` | `nexus_manage_friends` | Server returns `your_code`, current friends, and pending requests. ChatGPT shows the friend code. |
-| User asks for today's summary | `What did I eat and do today?` | `nexus_get_history` | Server returns today's workouts, meals, weights, and day totals. ChatGPT summarizes the day. |
+| User sets a nutrition goal | `Set my Nexus daily goal to 2000 calories and 120g protein.` | `nexus_set_goal` | Server creates a new goal record, preserves prior goals as history, and returns the updated targets. |
 
 Negative cases:
 

@@ -6,7 +6,7 @@
     <title>Add Nexus to ChatGPT</title>
     <meta
       name="description"
-      content="Add Nexus to ChatGPT as a connector from chatgpt.com in a browser: create the app with the Nexus MCP URL and start logging."
+      content="Add Nexus to ChatGPT from the Plugins page: enable Developer mode, create Nexus with its MCP URL, and start logging."
     >
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="stylesheet" href="/styles.css">
@@ -31,26 +31,30 @@
       <h1>Add Nexus to ChatGPT</h1>
 
       <div class="setup-video">
-        <video controls playsinline preload="metadata" poster="/assets/nexus-create-app-poster.jpg">
-          <source src="/assets/nexus-create-app.mp4" type="video/mp4">
+        <video controls playsinline preload="metadata" poster="/assets/nexus-plugin-setup-poster.png">
+          <source src="/assets/nexus-plugin-setup.mp4" type="video/mp4">
         </video>
       </div>
 
       <ol class="setup-steps">
         <li>
-          <h3>Open chatgpt.com in a browser</h3>
-          <p>Custom connectors aren't available in the ChatGPT iOS app — use a desktop or mobile browser.</p>
+          <h3>Open ChatGPT in a desktop browser</h3>
+          <p>The setup lives on chatgpt.com. Sign in, then open Settings.</p>
         </li>
         <li>
-          <h3>Create the app</h3>
-          <p>In ChatGPT, open <code>Settings → Apps → Advanced settings</code> and turn on
-          <strong>Developer mode</strong> (one-time). Go back, choose <strong>Create app</strong>,
-          name it Nexus, and paste this as the MCP Server URL:</p>
+          <h3>Turn on Developer mode</h3>
+          <p>In Settings, select <code>Security and login</code> and enable
+          <strong>Developer mode</strong> (one-time).</p>
+        </li>
+        <li>
+          <h3>Create Nexus from Plugins</h3>
+          <p>Select <strong>Plugins</strong> in the left sidebar, then click the <strong>+</strong> button.
+          Name it Nexus, leave authentication set to <strong>OAuth</strong>, and paste this Server URL:</p>
           <div class="endpoint-row">
             <code id="mcp-url">https://mcp.nexus.kushalsm.com/mcp</code>
             <button id="copy-btn" type="button">Copy</button>
           </div>
-          <p>Check the risk acknowledgment box, hit <strong>Create</strong>, then
+          <p>Check the custom-MCP risk acknowledgment, click <strong>Create</strong>, then
           <strong>Sign in with Nexus</strong> when ChatGPT prompts you.</p>
         </li>
         <li>

@@ -1,0 +1,12 @@
+Hi Apoorv,
+
+You built Fud AI (https://dev.to/apoorvdarshan/i-built-a-byok-ai-calorie-tracker-because-food-logging-is-still-too-slow-1hmf) because food logging is still too slow. Nine ways to log, and it still has to be its own app.
+
+I built Nexus so logging is just telling ChatGPT what you ate. It's a ChatGPT plugin and it remembers everything, so there is no separate app to open.
+
+Would value where you think it still has friction.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

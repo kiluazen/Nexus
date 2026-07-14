@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:widget-bridge": "node scripts/build-widget-bridge.mjs",
     "dev": "wrangler dev",
+    "predeploy": "npm run build:widget-bridge",
     "deploy": "wrangler deploy",
+    "pretest": "npm run build:widget-bridge",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -21,6 +24,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.40",
     "@cloudflare/workers-types": "^4.20250515.0",
+    "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8",
     "wrangler": "^4.84.1"

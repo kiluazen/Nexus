@@ -39,7 +39,9 @@ describe("submission metadata", () => {
 
   it("widget inline script parses (tsc can't see inside the template string)", () => {
     const html = widgetHtml();
-    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+      .map((match) => match[1] ?? "")
+      .find((body) => body.includes("var GOAL_KCAL"));
     expect(script && script.length).toBeTruthy();
     // new Function only PARSES the body; a syntax error (e.g. an unterminated
     // string) throws here, undefined runtime globals (window, instant) do not.

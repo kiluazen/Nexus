@@ -7,28 +7,50 @@ import { logEntries, getHistory, updateEntry, type UserCtx } from "./data/entrie
 import { manageFriends } from "./data/friends";
 import { setGoal } from "./data/goals";
 import { mintWidgetToken } from "./instant";
-import { WIDGET_URI, widgetHtml } from "./widget/today-html";
+import { widgetHtml } from "./widget/today-html";
 import { ValidationError, todayUtc } from "./lib/dates";
 // The @instantdb/core UMD bundle, vendored and loaded as a string (wrangler
 // Text rule). We inline it into the widget so there's no external <script src>
 // in the render path — the documented, reliable pattern.
 import INSTANT_BUNDLE from "../vendor/instantdb-core.umd.txt";
+import OPENAI_MCP_APP_BRIDGE from "../vendor/mcp-app-bridge.iife.txt";
+import CLAUDE_MCP_APP_BRIDGE from "../vendor/mcp-app-bridge-claude.iife.txt";
+
+declare const __MCP_HOST_TARGET__: "openai" | "claude";
+declare const __WIDGET_URI__: string;
+declare const __WIDGET_DOMAIN__: string;
+
+// Every deployed Worker defines one host target at build time. There is no
+// runtime host detection and no alternate protocol path inside either widget.
+const MCP_HOST_TARGET = __MCP_HOST_TARGET__;
+const WIDGET_URI = __WIDGET_URI__;
+const WIDGET_DOMAIN = __WIDGET_DOMAIN__;
+const MCP_APP_BRIDGE = MCP_HOST_TARGET === "claude"
+  ? CLAUDE_MCP_APP_BRIDGE
+  : OPENAI_MCP_APP_BRIDGE;
 
 // The full widget document = app fragment + the inlined InstantDB library.
 // Built by concatenation (not template interpolation) because the minified
 // bundle contains backticks and ${ that would break a template literal.
 function fullWidgetHtml(): string {
-  return widgetHtml() + "\n<script>" + INSTANT_BUNDLE + "</script>";
+  const html = widgetHtml().replace(
+    "/*__NEXUS_MCP_APP_BRIDGE__*/",
+    MCP_APP_BRIDGE,
+  );
+  // ChatGPT uses the InstantDB subscription to keep an already-rendered card
+  // synchronized with later writes. Claude receives the complete tool result
+  // and sends widget edits through MCP, so shipping this multi-megabyte runtime
+  // in Claude's sandbox document adds transfer/boot cost without helping first
+  // paint or interaction.
+  return MCP_HOST_TARGET === "openai"
+    ? html + "\n<script>" + INSTANT_BUNDLE + "</script>"
+    : html;
 }
 
 // CSP for the widget iframe. connectDomains covers fetch + websocket to
 // InstantDB for the live session (both https and wss are declared because
 // sandbox handling of wss is inconsistent). No resourceDomains are needed:
 // the library is inlined, not fetched from a CDN.
-const LEGACY_WIDGET_CSP = {
-  connect_domains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
-  resource_domains: [] as string[],
-};
 const WIDGET_CSP = {
   connectDomains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
   resourceDomains: [] as string[],
@@ -37,17 +59,10 @@ const WIDGET_CSP = {
 // Shared so the resource registration and the read callback agree — the MCP
 // SDK does not merge registration _meta into read results.
 //
-// ChatGPT compatibility metadata and current MCP Apps metadata are deliberately
-// separate because their CSP field names differ (snake_case vs camelCase).
 const WIDGET_META = {
-  "openai/widgetCSP": LEGACY_WIDGET_CSP,
-  "openai/widgetPrefersBorder": true,
-  "openai/widgetDomain": "https://mcp.nexus.kushalsm.com",
-  "openai/widgetDescription":
-    "Shows the day's logged workouts, meals, calories, and protein, updating live as new entries sync.",
   ui: {
     csp: WIDGET_CSP,
-    domain: "https://mcp.nexus.kushalsm.com",
+    domain: WIDGET_DOMAIN,
     prefersBorder: true,
   },
 };
@@ -175,9 +190,6 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         outputSchema: LogOutput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         _meta: {
-          "openai/outputTemplate": WIDGET_URI,
-          "openai/toolInvocation/invoking": "Logging to Nexus…",
-          "openai/toolInvocation/invoked": "Logged to Nexus",
           ui: { resourceUri: WIDGET_URI },
         },
       },
@@ -205,13 +217,9 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         inputSchema: HistoryInput.shape,
         outputSchema: HistoryOutput.shape,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-        // No outputTemplate on purpose: reads answer in text, they don't render
+        // No resourceUri on purpose: reads answer in text, they don't render
         // the editable card. The card is for logging/correcting, not for
         // "what's my total?" questions.
-        _meta: {
-          "openai/toolInvocation/invoking": "Checking your Nexus log…",
-          "openai/toolInvocation/invoked": "Fetched from Nexus",
-        },
       },
       async (args) => {
         const r = await safe(() => getHistory(this.env, this.user(), args));

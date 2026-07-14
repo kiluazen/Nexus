@@ -1,0 +1,12 @@
+Hi Joonas,
+
+You vibe-coded mealgram (https://codeandlife.com/2025/10/15/vibe-coding-food-diary-bot-in-one-hour/) in an hour and moved your old Google Sheet logs into it.
+
+I chased the same itch through ChatGPT's new plugin directory: Nexus runs in the chat itself, so the log lives next to the model that estimated it. Nothing to host.
+
+Where does it fall short of mealgram? Genuinely want the list.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

@@ -16,3 +16,6 @@ workers/.wrangler/
 workers/dist/
 workers/worker-configuration.d.ts
 node_modules
+
+# Scratch screen recordings / exports at repo root — never commit
+/*.mp4

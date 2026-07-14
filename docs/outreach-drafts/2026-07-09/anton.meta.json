@@ -1,0 +1,1 @@
+{"format": "html", "html_file": "/Users/kushalsm/solo/nexus/docs/outreach-drafts/2026-07-09/anton.html", "send_note": "send with: autark mail send --lead-id <lead> --to <to> --subject <subj> --html @<html_file>  then: autark draft mark-sent <draft-id> --thread-ref <thread_id>"}

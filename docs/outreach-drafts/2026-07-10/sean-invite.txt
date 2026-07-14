@@ -1,0 +1,1 @@
+Hi Sean - your one-conversation-per-day Meals Project stuck with me. I built Nexus, a plugin inside ChatGPT that does what that scaffold does but keeps the log. Would like to compare notes once it's in front of you: nexus.kushalsm.com

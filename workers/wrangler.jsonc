@@ -5,10 +5,10 @@
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  // Load the vendored InstantDB bundle as a string so the widget can inline it
-  // instead of fetching it from a CDN (the reliable, docs-recommended pattern).
+  // Load the vendored browser bundles as strings so the widget can inline them
+  // instead of fetching them from a CDN (the reliable, docs-recommended pattern).
   "rules": [
-    { "type": "Text", "globs": ["**/*.umd.txt"] }
+    { "type": "Text", "globs": ["**/*.umd.txt", "**/*.iife.txt"], "fallthrough": false }
   ],
 
   "kv_namespaces": [
@@ -31,7 +31,10 @@
   ],
 
   "define": {
-    "__BASE_URL__": "\"https://mcp.nexus.kushalsm.com\""
+    "__BASE_URL__": "\"https://mcp.nexus.kushalsm.com\"",
+    "__MCP_HOST_TARGET__": "\"openai\"",
+    "__WIDGET_URI__": "\"ui://widget/nexus-today-v13.html\"",
+    "__WIDGET_DOMAIN__": "\"https://mcp.nexus.kushalsm.com\""
   },
 
   "vars": {
@@ -50,7 +53,7 @@
       "compatibility_date": "2026-05-01",
       "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
       "rules": [
-        { "type": "Text", "globs": ["**/*.umd.txt"] }
+        { "type": "Text", "globs": ["**/*.umd.txt", "**/*.iife.txt"], "fallthrough": false }
       ],
       "workers_dev": true,
       // Explicitly NO custom-domain routes — staging must never claim the prod
@@ -67,10 +70,46 @@
         { "tag": "v1", "new_sqlite_classes": ["NexusMcpAgent"] }
       ],
       "define": {
-        "__BASE_URL__": "\"https://nexus-mcp-staging.kushalsokke.workers.dev\""
+        "__BASE_URL__": "\"https://nexus-mcp-staging.kushalsokke.workers.dev\"",
+        "__MCP_HOST_TARGET__": "\"openai\"",
+        "__WIDGET_URI__": "\"ui://widget/nexus-today-staging-v13.html\"",
+        "__WIDGET_DOMAIN__": "\"https://nexus-mcp-staging.kushalsokke.workers.dev\""
       },
       "vars": {
         "BASE_URL": "https://nexus-mcp-staging.kushalsokke.workers.dev",
+        "INSTANT_APP_ID": "17362c65-4c31-4e79-be0f-79fdca55c28a"
+      }
+    },
+
+    "claude": {
+      "name": "nexus-mcp-claude",
+      "compatibility_date": "2026-05-01",
+      "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+      "rules": [
+        { "type": "Text", "globs": ["**/*.umd.txt", "**/*.iife.txt"], "fallthrough": false }
+      ],
+      "workers_dev": true,
+      "routes": [
+        { "pattern": "claude-mcp.nexus.kushalsm.com", "custom_domain": true }
+      ],
+      "kv_namespaces": [
+        { "binding": "OAUTH_KV",    "id": "eaaed7dedb9a410281488e12716c5041" },
+        { "binding": "NEXUS_CACHE", "id": "7b300dd97fac4570a143cc6a462780bb" }
+      ],
+      "durable_objects": {
+        "bindings": [{ "name": "MCP_OBJECT", "class_name": "NexusMcpAgent" }]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["NexusMcpAgent"] }
+      ],
+      "define": {
+        "__BASE_URL__": "\"https://claude-mcp.nexus.kushalsm.com\"",
+        "__MCP_HOST_TARGET__": "\"claude\"",
+        "__WIDGET_URI__": "\"ui://widget/nexus-today-claude-v3.html\"",
+        "__WIDGET_DOMAIN__": "\"9b68940b7971ea72dbbd8bcad6a73a79.claudemcpcontent.com\""
+      },
+      "vars": {
+        "BASE_URL": "https://claude-mcp.nexus.kushalsm.com",
         "INSTANT_APP_ID": "17362c65-4c31-4e79-be0f-79fdca55c28a"
       }
     }

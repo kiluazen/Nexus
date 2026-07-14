@@ -1,0 +1,12 @@
+Hi Anton,
+
+Read How I Replaced MyFitnessPal With a Single MCP Server (https://akutishevsky.medium.com/how-i-replaced-myfitnesspal-and-other-apps-with-a-single-mcp-server-56ca5ec7d673). Photographing food and telling Claude to log it is the conclusion I reached too.
+
+ChatGPT has plugins now, so I built the native version: Nexus. The log survives across chats and the trends chart themselves.
+
+Would like to know how it compares to your server.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

@@ -1,0 +1,14 @@
+Hi Julia,
+
+Your Business Insider piece (https://www.businessinsider.com/used-chatgpt-track-diet-calories-protein-lose-fat-gain-muscle-2026-4): you typed every meal into one ChatGPT thread, and a fresh thread wipes the running total.
+
+You were doing a database's job by hand, feeding the model its own memory.
+
+ChatGPT can hold that itself now. I built Nexus for it, a ChatGPT plugin.
+
+Would love to know what you think.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

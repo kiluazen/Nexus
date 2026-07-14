@@ -35,8 +35,11 @@ body {
   background: var(--cream);
   min-height: 100dvh;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   line-height: 1.5;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 .bg-art {
@@ -108,7 +111,7 @@ a { color: inherit; }
 .hero {
   width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 8vh 4px 10vh;
+  padding: clamp(42px, 8svh, 92px) 4px clamp(56px, 10svh, 112px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -161,6 +164,35 @@ a { color: inherit; }
 }
 
 .cta:hover { background: var(--body-ink); }
+
+/* Literal product demo: a poster loads first; the 4 MB video loads on demand. */
+.product-demo {
+  /* Keep the phone in scale with both the viewport and the background figures. */
+  width: min(360px, calc(100vw - 48px), 32svh);
+  margin-top: clamp(32px, 5svh, 52px);
+}
+
+.demo-phone {
+  position: relative;
+  padding: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 34px;
+  background: #050505;
+  box-shadow:
+    0 32px 80px rgba(10, 10, 35, 0.2),
+    0 6px 20px rgba(10, 10, 35, 0.14),
+    0 0 0 1px rgba(10, 10, 35, 0.18);
+}
+
+.demo-phone video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 690 / 1498;
+  border-radius: 27px;
+  background: #000;
+  object-fit: cover;
+}
 
 /* Setup / Get started page */
 .setup-main {
@@ -354,20 +386,119 @@ a { color: inherit; }
   color: var(--ink);
 }
 
+/* Laptop and split-window layouts: height becomes the limiting dimension. */
+@media (max-height: 850px) and (min-width: 641px) {
+  .hero {
+    padding-top: clamp(30px, 5svh, 42px);
+    padding-bottom: clamp(42px, 7svh, 60px);
+  }
+
+  .hero h1 { font-size: clamp(38px, 5.2vw, 58px); }
+  .scope { margin-top: 10px; }
+  .cta-row { margin-top: 24px; }
+  .product-demo {
+    width: min(300px, 28svh, calc(100vw - 48px));
+    margin-top: 28px;
+  }
+  .bg-art {
+    background-position: left 54%, right 2vw 54%;
+    background-size: auto 74%, auto 82%;
+  }
+}
+
+/* Tablet and narrow desktop: preserve overlap instead of making three columns. */
+@media (max-width: 900px) and (min-width: 641px) {
+  .hero { padding-top: clamp(36px, 6svh, 60px); }
+  .product-demo { width: min(300px, 30svh, calc(100vw - 64px)); }
+  .bg-art {
+    opacity: 0.76;
+    background-position: left -8vw center, right -6vw center;
+    background-size: auto 68%, auto 74%;
+  }
+}
+
 @media (max-width: 640px) {
   .site-header { flex-wrap: wrap; row-gap: 10px; }
   .nav-links {
     order: 2;
     width: 100%;
     justify-content: space-between;
-    gap: 12px;
-    font-size: 12px;
+    gap: 8px;
+    font-size: 11px;
   }
-  .hero { padding-top: 6vh; }
+  .hero {
+    width: min(100% - 24px, 520px);
+    padding: clamp(32px, 6svh, 52px) 0 clamp(44px, 8svh, 72px);
+  }
+  .hero h1 {
+    width: 100%;
+    font-size: clamp(34px, 10.5vw, 48px);
+  }
+  .cta-row { margin-top: 28px; }
+  .product-demo {
+    width: min(calc(100vw - 64px), 30svh, 286px);
+    margin-top: 36px;
+  }
+  .demo-phone {
+    padding: 5px;
+    border-radius: 28px;
+  }
+  .demo-phone video { border-radius: 23px; }
   .site-footer { flex-direction: column; gap: 4px; align-items: flex-end; }
   .bg-art {
     opacity: 0.6;
     background-position: left -3vw bottom, right -3vw bottom;
     background-size: auto 30%, auto 32%;
+  }
+}
+
+/* Very small phones and landscape phones need a compact first composition. */
+@media (max-width: 390px), (max-height: 600px) {
+  .site-header { padding-top: 10px; padding-bottom: 10px; }
+  .hero { padding-top: 28px; padding-bottom: 44px; }
+  .hero h1 { font-size: clamp(34px, 11vw, 44px); }
+  .scope { margin-top: 10px; font-size: 12px; }
+  .cta-row { margin-top: 22px; }
+  .cta { padding: 12px 21px; }
+  .product-demo {
+    width: min(calc(100vw - 72px), 26svh, 240px);
+    margin-top: 28px;
+  }
+}
+
+/* Short, wide windows: put the portrait demo beside the copy instead of shrinking it away. */
+@media (max-height: 600px) and (min-width: 641px) {
+  .hero {
+    width: min(780px, calc(100vw - 112px));
+    padding: 12px 4px 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "headline demo"
+      "scope demo"
+      "cta demo";
+    column-gap: clamp(32px, 6vw, 72px);
+    row-gap: 14px;
+    justify-content: initial;
+    justify-items: start;
+    align-items: center;
+    text-align: left;
+  }
+  .hero h1 {
+    grid-area: headline;
+    max-width: 11ch;
+    font-size: clamp(36px, 5vw, 52px);
+  }
+  .scope { grid-area: scope; margin-top: 0; }
+  .cta-row { grid-area: cta; margin-top: 0; }
+  .product-demo {
+    grid-area: demo;
+    width: min(178px, 37svh, 22vw);
+    margin-top: 0;
+  }
+  .bg-art {
+    opacity: 0.62;
+    background-position: left -3vw center, right -2vw center;
+    background-size: auto 78%, auto 86%;
   }
 }

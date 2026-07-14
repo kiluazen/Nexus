@@ -1,0 +1,12 @@
+Hi Leon,
+
+You put your food on a scale to test ChatGPT's calorie estimates (https://pub.towardsai.net/i-used-chatgpt-to-count-my-calories-fabd14f0538b). The estimates held up.
+
+ChatGPT added plugins since, so I built Nexus on that result: the estimate finally has somewhere to go.
+
+Try it on a meal you know the numbers for.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

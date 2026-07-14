@@ -1,0 +1,12 @@
+Hi Alex,
+
+In Claude Code for Life #1 (https://medium.com/data-science-collective/claude-code-for-life-1-managing-my-health-and-wellness-cae435c77030) your food lives in Yazio and Claude re-ingests it every session.
+
+I built Nexus so the log lives where the model is: a plugin inside ChatGPT. Tell ChatGPT the meal or send a photo, history kept.
+
+It might collapse a step in your loop. Would like your take.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

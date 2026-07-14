@@ -55,6 +55,18 @@
         "open_world_justification": "Changes only Nexus friendship records between Nexus accounts and does not contact third-party messaging or publishing services.",
         "destructive_justification": "Rejecting or removing a friendship deletes the friendship record and revokes the other user's friend-history access."
       }
+    },
+    "nexus_set_goal": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a new daily calorie/protein/carb/fat goal record for the authenticated Nexus user when they explicitly ask to change targets.",
+        "open_world_justification": "Writes only to Nexus-owned goal records for the authenticated user and does not publish or send data to external systems.",
+        "destructive_justification": "Adds a new goal record while preserving prior goals as history; it does not delete entries or revoke access."
+      }
     }
   },
   "test_cases": [
@@ -75,14 +87,6 @@
       "expected_output_url": null
     },
     {
-      "description": "Fetch the user's current-day summary.",
-      "user_prompt": "What did I eat and do today? Use Nexus.",
-      "file_attachment_urls": null,
-      "tools_triggered": "nexus_get_history",
-      "expected_output": "Returns today's workouts, meals, weights, exercise keys, and day_totals so ChatGPT can summarize activity and nutrition.",
-      "expected_output_url": null
-    },
-    {
       "description": "Correct a previously logged workout entry.",
       "user_prompt": "Actually that first bench press set was 9 reps, not 8. Fix it in Nexus.",
       "file_attachment_urls": null,
@@ -96,6 +100,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "nexus_manage_friends",
       "expected_output": "Returns the user's friend code plus current friends, pending received requests, and pending sent requests.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Set daily nutrition goals from an explicit user request.",
+      "user_prompt": "Set my Nexus daily goal to 2000 calories and 120g protein.",
+      "file_attachment_urls": null,
+      "tools_triggered": "nexus_set_goal",
+      "expected_output": "Creates a new goal record with calorie and protein targets, keeps prior goals as history, and confirms the updated targets.",
       "expected_output_url": null
     }
   ],

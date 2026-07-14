@@ -1,0 +1,12 @@
+Hi Frank,
+
+In your food tracker post (https://dev.to/frosnerd/build-your-own-food-tracker-with-openai-platform-55n8) the model part was easy. What you had to build by hand was everything around the model.
+
+ChatGPT shipped plugins, so I built that part as one: Nexus. You drop the photo in the chat and the history builds itself.
+
+Curious whether it survives your validation method.
+
+https://nexus.kushalsm.com/
+
+best,
+- kushal

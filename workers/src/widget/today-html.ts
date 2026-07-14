@@ -19,7 +19,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v9.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v13.html";
 
 // Fallback only — a user who's never called nexus_set_goal has no goal row
 // yet, and the server's own DEFAULT_GOAL (schema/goal-shapes.ts) matches
@@ -211,6 +211,7 @@ export function widgetHtml(): string {
     .nx-unit { display: none; }
   }
 </style>
+<script>/*__NEXUS_MCP_APP_BRIDGE__*/</script>
 <script>
 (function () {
   var GOAL_KCAL = ${DEFAULT_GOAL_KCAL}, GOAL_PROTEIN = ${DEFAULT_GOAL_PROTEIN};
@@ -240,25 +241,12 @@ export function widgetHtml(): string {
   var prevByKey = {};
   var toolOutput = null;
   var toolMeta = {};
-  var rpcSeq = 0;
-  var rpcPending = {};
-
-  // Current MCP Apps bridge: JSON-RPC 2.0 over postMessage. Tool results drive
-  // rendering; component actions use tools/call and resolve from RPC replies.
+  var toolOutputSignature = null;
+  var hasHydratedToolOutput = false;
+  // Standard MCP Apps bridge. The tiny bundled client performs the
+  // ui/initialize handshake, receives tool results, and issues tools/call.
   function callTool(name, args) {
-    if (window.openai && typeof window.openai.callTool === "function") {
-      return window.openai.callTool(name, args);
-    }
-    return new Promise(function (resolve, reject) {
-      var id = "nexus-" + (++rpcSeq);
-      rpcPending[id] = { resolve: resolve, reject: reject };
-      window.parent.postMessage({
-        jsonrpc: "2.0",
-        id: id,
-        method: "tools/call",
-        params: { name: name, arguments: args },
-      }, "*");
-    });
+    return window.NexusMcpBridge.callTool(name, args);
   }
 
   function fmtDate(d) {
@@ -700,17 +688,14 @@ export function widgetHtml(): string {
 
   var liveStarted = false;
   function currentPeriod() {
-    var out = toolOutput || (window.openai && window.openai.toolOutput) || null;
+    var out = toolOutput;
     if (out && out.period) return out.period;
     var today = new Date().toISOString().slice(0, 10);
     return { from: today, to: today };
   }
   function tryLive() {
     if (liveStarted) return;
-    var meta = Object.keys(toolMeta).length
-      ? toolMeta
-      : ((window.openai && window.openai.toolResponseMetadata) || {});
-    var w = meta["nexus/widget"];
+    var w = toolMeta["nexus/widget"];
     if (!w || !w.app_id || !w.token || typeof instant === "undefined") return;
     liveStarted = true;
     var period = currentPeriod();
@@ -728,40 +713,43 @@ export function widgetHtml(): string {
   }
 
   function boot() {
-    var out = toolOutput || (window.openai && window.openai.toolOutput) || null;
+    var out = toolOutput;
     var period = currentPeriod();
     initialState(out);
     applyData(out && out.workouts ? out : { period: period, workouts: [], meals: [], weights: [] });
     tryLive();
   }
 
-  window.addEventListener("message", function (event) {
-    if (event.source !== window.parent) return;
-    var message = event.data;
-    if (!message || message.jsonrpc !== "2.0") return;
-
-    if (message.id != null && rpcPending[message.id]) {
-      var pending = rpcPending[message.id];
-      delete rpcPending[message.id];
-      if (message.error) pending.reject(new Error(message.error.message || "Tool call failed"));
-      else pending.resolve(message.result);
-      return;
-    }
-
-    if (message.method !== "ui/notifications/tool-result") return;
-    var result = message.params || {};
-    toolOutput = result.structuredContent || null;
-    toolMeta = result._meta || {};
-    boot();
-  }, { passive: true });
-  function bootFromOpenAi() {
-    if (!window.openai || !window.openai.toolOutput) return;
-    toolOutput = window.openai.toolOutput;
-    toolMeta = window.openai.toolResponseMetadata || {};
+  // Repeated host delivery of the same tool result must not reset local UI
+  // choices or overwrite fresher InstantDB subscription data.
+  function outputSignature(out) {
+    try { return JSON.stringify(out); }
+    catch (e) { return null; }
+  }
+  function hydrateToolResult(out, meta) {
+    if (meta) toolMeta = meta;
+    if (!out) { tryLive(); return; }
+    var signature = outputSignature(out);
+    var same = hasHydratedToolOutput &&
+      ((signature !== null && signature === toolOutputSignature) ||
+       (signature === null && out === toolOutput));
+    if (same) { tryLive(); return; }
+    toolOutput = out;
+    toolOutputSignature = signature;
+    hasHydratedToolOutput = true;
     boot();
   }
-  bootFromOpenAi();
-  window.addEventListener("openai:set_globals", bootFromOpenAi, { passive: true });
+
+  function showBridgeError(error) {
+    console.error("Nexus MCP Apps bridge failed", error);
+    if (!hasHydratedToolOutput) {
+      root.innerHTML = '<div class="nx-err">Nexus could not connect to the app host.</div>';
+    }
+  }
+
+  window.NexusMcpBridge.connect(function (result) {
+    hydrateToolResult(result.structuredContent || null, result._meta || {});
+  }).catch(showBridgeError);
   window.addEventListener("load", tryLive);
 })();
 </script>`;
