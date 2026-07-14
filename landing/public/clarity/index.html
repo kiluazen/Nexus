@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clarity — how AI-platform widgets actually work</title>
+<meta name="description" content="The Nexus crash course: the MCP Apps protocol, how ChatGPT and Claude each run it, and every gotcha we hit — in one readable page.">
+<meta name="robots" content="index,follow">
+<style>
+  :root{
+    --paper:#faf6ec; --ink:#211d16; --ink-soft:#5d564a; --line:#e2dbc9;
+    --accent:#1d2bb8; --accent-soft:#e8eafd; --card:#fffdf6; --mark:#f4ead2;
+    --good:#1a7a3c; --bad:#b3261e; --warn:#9a6b00; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#161310; --ink:#e9e2d2; --ink-soft:#a89f8c; --line:#332e26;
+      --accent:#93a0ff; --accent-soft:#20244a; --card:#1d1915; --mark:#3a3222;
+      --good:#6fce93; --bad:#ff8d85; --warn:#e0b45c;
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:Charter,'Iowan Old Style',Georgia,'Times New Roman',serif;
+    font-size:17px; line-height:1.65;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  #bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0%;z-index:60}
+  nav{
+    position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--paper) 92%,transparent);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+    display:flex;gap:6px;overflow-x:auto;padding:10px 14px;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  }
+  nav::-webkit-scrollbar{display:none}
+  nav a{
+    flex:0 0 auto;font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.02em;
+    color:var(--ink-soft);text-decoration:none;border:1px solid var(--line);
+    border-radius:999px;padding:4px 11px;background:var(--card);white-space:nowrap;
+  }
+  nav a:active{color:var(--accent);border-color:var(--accent)}
+  main{max-width:680px;margin:0 auto;padding:0 20px 90px}
+  header.hero{padding:54px 0 12px}
+  .kicker{font-family:system-ui,sans-serif;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  header.hero h1{font-size:clamp(30px,7.5vw,44px);line-height:1.12;font-weight:700;margin:10px 0 14px;letter-spacing:-.01em}
+  .dek{font-size:18px;color:var(--ink-soft);font-style:italic}
+  .stamp{font-family:system-ui,sans-serif;font-size:12px;color:var(--ink-soft);margin-top:16px}
+  section{padding:38px 0 6px;border-top:1px solid var(--line);margin-top:38px}
+  section:first-of-type{border-top:none;margin-top:8px}
+  .num{font-family:system-ui,sans-serif;font-weight:700;font-size:12px;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+  h2{font-size:clamp(23px,5.5vw,30px);line-height:1.2;margin:6px 0 16px;letter-spacing:-.01em}
+  h3{font-size:19px;margin:26px 0 8px}
+  p{margin:0 0 14px}
+  p.lead{font-size:18.5px}
+  ul,ol{margin:0 0 16px 22px}
+  li{margin-bottom:8px}
+  strong{font-weight:700}
+  code{font-family:var(--mono);font-size:.83em;background:var(--mark);padding:1px 5px;border-radius:4px;word-break:break-word}
+  mark{background:var(--mark);color:inherit;padding:0 3px;border-radius:3px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 8px;margin:18px 0}
+  .card.tint{background:var(--accent-soft);border-color:transparent}
+  .tldr li{margin-bottom:10px}
+  .tablewrap{overflow-x:auto;margin:18px -20px;padding:0 20px}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-family:system-ui,sans-serif;font-size:13.5px;line-height:1.45;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);background:color-mix(in srgb,var(--card) 60%,var(--paper))}
+  tr:last-child td{border-bottom:none}
+  td b{font-weight:650}
+  .ok{color:var(--good);font-weight:650}.no{color:var(--bad);font-weight:650}.meh{color:var(--warn);font-weight:650}
+  figure{margin:22px 0}
+  figure svg{width:100%;height:auto;display:block}
+  figcaption{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--ink-soft);margin-top:8px;text-align:center}
+  .case{border-left:3px solid var(--accent);padding:2px 0 2px 16px;margin:20px 0}
+  .case .sym{font-weight:700}
+  .case .why{color:var(--ink-soft)}
+  .case .rule{font-family:system-ui,sans-serif;font-size:13.5px;margin-top:6px;background:var(--accent-soft);display:inline-block;padding:3px 10px;border-radius:8px}
+  .status{font-family:system-ui,sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;border-radius:6px;padding:2px 7px;vertical-align:2px}
+  .status.open{background:var(--bad);color:var(--paper)}
+  .status.closed{background:var(--good);color:var(--paper)}
+  .timeline{list-style:none;margin:20px 0;padding:0;position:relative}
+  .timeline::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .timeline li{position:relative;padding:0 0 20px 30px;margin:0}
+  .timeline li::before{content:"";position:absolute;left:1px;top:7px;width:14px;height:14px;border-radius:50%;background:var(--paper);border:3px solid var(--accent)}
+  .timeline .when{font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .timeline .what{display:block}
+  .foot{font-family:system-ui,sans-serif;font-size:13px;color:var(--ink-soft);border-top:1px solid var(--line);margin-top:50px;padding-top:18px}
+  .srcs{font-family:system-ui,sans-serif;font-size:13.5px}
+  .srcs a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+  .srcs li{margin-bottom:6px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<nav>
+  <a href="#tldr">TL;DR</a><a href="#story">The story</a><a href="#protocol">The protocol</a><a href="#decoder">Jargon decoder</a><a href="#matrix">ChatGPT vs Claude</a><a href="#expo">The Expo question</a><a href="#cases">Case files</a><a href="#nexus">Nexus today</a><a href="#rules">Rules</a><a href="#sources">Sources</a>
+</nav>
+<main>
+
+<header class="hero">
+  <div class="kicker">Nexus · field guide</div>
+  <h1>How AI-platform widgets actually work</h1>
+  <p class="dek">The protocol, the two platforms that run it differently, and every single thing that bit us — in one page you can read on a phone.</p>
+  <p class="stamp">Written 14 July 2026 · from live tests on ChatGPT + Claude web/iOS + the official docs of both · updated as things change (and they will)</p>
+</header>
+
+<section id="tldr">
+  <div class="num">00 · The 60-second version</div>
+  <h2>TL;DR</h2>
+  <div class="card tint"><ul class="tldr">
+    <li>There is now <strong>one open protocol</strong> for widgets inside AI chats: <strong>MCP Apps</strong>, an official MCP extension since 26 Jan 2026. Your server ships HTML; the platform runs it in a sandboxed iframe; they talk JSON-RPC over <code>postMessage</code>.</li>
+    <li><strong>ChatGPT and Claude both run it.</strong> ChatGPT keeps extra <code>openai/*</code> features on top (not deprecated, just optional). Claude is closest to the pure standard.</li>
+    <li>The Expo-like thing you asked for <strong>exists and is official</strong>: the <code>@modelcontextprotocol/ext-apps</code> SDK. <code>registerAppTool()</code> emits both platforms' metadata; <code>App.connect()</code> auto-detects which host it's inside. Nexus currently hand-rolls most of what it does.</li>
+    <li>The single biggest display rule on <em>both</em> platforms: <mark>the widget-bearing tool call must be a clean, standalone call</mark>. Multi-tool turns get folded away (Claude) or break rendering (ChatGPT iOS).</li>
+    <li>Nexus today: ChatGPT web <b>works</b>, Claude web <b>works</b>, Claude iOS <b>shell only</b> (open bug, diagnosable via Safari→iPhone inspector), ChatGPT iOS <b>untested since the rewrite</b>.</li>
+    <li>Nothing you felt was imaginary: the platforms genuinely rewrote their format mid-flight (Oct 2025 → Jan 2026), the docs lag the hosts, and dev mode has its own bugs. The fix is testing on real hosts + a few hard rules (section 08).</li>
+  </ul></div>
+</section>
+
+<section id="story">
+  <div class="num">01 · How we got here</div>
+  <h2>The story: three formats in nine months</h2>
+  <p class="lead">Your anger is justified. Anyone who built a ChatGPT app in late 2025 has now lived through two format migrations. Here's the actual sequence:</p>
+  <ul class="timeline">
+    <li><span class="when">EARLY 2025</span><span class="what"><strong>mcp-ui</strong> — a community project (Ido Salomon, Liad Yosef) proves you can serve UI over MCP. No platform support yet.</span></li>
+    <li><span class="when">OCT 2025</span><span class="what"><strong>ChatGPT Apps SDK launches</strong> — OpenAI's own, proprietary take: <code>window.openai</code> global injected into your iframe, <code>openai/outputTemplate</code> to link tool→widget, mimeType <code>text/html+skybridge</code>. This is "the old format".</span></li>
+    <li><span class="when">NOV 2025</span><span class="what"><strong>SEP-1865 proposed</strong> — the mcp-ui authors + OpenAI + Anthropic take it to the MCP standards process.</span></li>
+    <li><span class="when">26 JAN 2026</span><span class="what"><strong>MCP Apps becomes an official MCP extension</strong>, with the <code>@modelcontextprotocol/ext-apps</code> SDK. Claude (web+desktop) supports it day one; ChatGPT follows within days; VS Code, Goose, JetBrains after.</span></li>
+    <li><span class="when">SPRING 2026</span><span class="what"><strong>ChatGPT adopts the standard keys</strong> (<code>_meta.ui.*</code>, <code>text/html;profile=mcp-app</code>) and demotes its own keys to "compatibility aliases + ChatGPT-only extensions". Official line: lead with the standard, no plans to deprecate <code>openai/*</code>.</span></li>
+    <li><span class="when">JUL 2026</span><span class="what"><strong>Nexus rewrites to standard-only</strong> — one bad day of "Runtime error" (a crashing bundled runtime, not the protocol), now rendering on ChatGPT web and Claude web. Claude iOS still fighting us.</span></li>
+  </ul>
+  <p>So when the docs and skills files contradict each other: they were written in different eras. Anything mentioning <code>text/html+skybridge</code> or <em>only</em> <code>window.openai</code> is era-2 material. Anything with <code>_meta.ui.resourceUri</code> and <code>ui/initialize</code> is current.</p>
+</section>
+
+<section id="protocol">
+  <div class="num">02 · The mental model</div>
+  <h2>The protocol on one page</h2>
+  <p class="lead">Strip away every brand name and it's this: <strong>your MCP server ships a self-contained HTML file; the platform runs it in a sandboxed iframe next to the chat; the iframe and the platform exchange JSON-RPC messages.</strong></p>
+
+  <h3>Server side — three declarations</h3>
+  <ol>
+    <li><strong>A UI resource.</strong> An MCP resource whose URI uses the <code>ui://</code> scheme (e.g. <code>ui://widget/nexus-today-v13.html</code>) and whose mimeType is <code>text/html;profile=mcp-app</code>. Its text is your entire widget — HTML + all JS inlined, because the sandbox blocks most external fetches.</li>
+    <li><strong>A pointer on the tool.</strong> The tool that should render the widget carries <code>_meta.ui.resourceUri</code> naming that resource. Tool fires → platform fetches the resource → mounts the iframe.</li>
+    <li><strong>Policy on the resource.</strong> <code>_meta.ui.csp</code> (which hosts the iframe may fetch/connect to), <code>_meta.ui.domain</code> (a stable serving origin, each platform has its own rules), <code>_meta.ui.prefersBorder</code> (chrome hint).</li>
+  </ol>
+
+  <h3>Client side — the handshake</h3>
+  <figure>
+  <svg viewBox="0 0 360 330" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="11">
+    <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker></defs>
+    <line x1="70" y1="42" x2="70" y2="316" stroke="var(--line)" stroke-width="2"/>
+    <line x1="290" y1="42" x2="290" y2="316" stroke="var(--line)" stroke-width="2"/>
+    <rect x="20" y="12" width="100" height="24" rx="7" fill="var(--accent)"/><text x="70" y="28" text-anchor="middle" fill="var(--paper)" font-weight="700">YOUR WIDGET</text>
+    <rect x="240" y="12" width="100" height="24" rx="7" fill="var(--accent)"/><text x="290" y="28" text-anchor="middle" fill="var(--paper)" font-weight="700">HOST</text>
+    <line x1="70" y1="62" x2="290" y2="62" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="55" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">ui/initialize</tspan> — hello, I'm an app</text>
+    <line x1="290" y1="94" x2="70" y2="94" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="87" text-anchor="middle" fill="var(--ink)">result: theme, size, capabilities</text>
+    <line x1="70" y1="126" x2="290" y2="126" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="119" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">ui/notifications/initialized</tspan></text>
+    <line x1="290" y1="164" x2="70" y2="164" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="150" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">ui/notifications/tool-result</tspan></text>
+    <text x="180" y="161" text-anchor="middle" fill="var(--ink-soft)">the data that mounted you → paint!</text>
+    <line x1="70" y1="204" x2="290" y2="204" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="190" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">tools/call</tspan> — user edited something</text>
+    <text x="180" y="201" text-anchor="middle" fill="var(--ink-soft)">widget can call your server's tools</text>
+    <line x1="70" y1="240" x2="290" y2="240" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="233" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">ui/notifications/size-changed</tspan></text>
+    <line x1="290" y1="278" x2="70" y2="278" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="180" y="264" text-anchor="middle" fill="var(--ink)"><tspan font-family="monospace">ui/resource-teardown</tspan> (request!)</text>
+    <text x="180" y="275" text-anchor="middle" fill="var(--ink-soft)">you must reply before unmount</text>
+    <text x="180" y="308" text-anchor="middle" fill="var(--ink-soft)" font-style="italic">all of it: JSON-RPC 2.0 over postMessage</text>
+  </svg>
+  <figcaption>The MCP Apps lifecycle (spec 2026-01-26). The widget speaks first.</figcaption>
+  </figure>
+  <p>Two details that matter in practice: the initialize params must be <code>{protocolVersion, capabilities, clientInfo}</code> (not made-up field names — hosts may validate), and <code>ui/resource-teardown</code> is a <em>request</em>, so a widget that never answers host requests is technically hung. The official <code>App</code> class handles all of this; a hand-rolled bridge has to remember to.</p>
+</section>
+
+<section id="decoder">
+  <div class="num">03 · The jargon decoder</div>
+  <h2>Every term that's been thrown at you</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Term</th><th>What it actually is</th><th>Era</th></tr>
+    <tr><td><b>MCP Apps</b></td><td>The open standard: UI over MCP. The umbrella term for all of this.</td><td>Current</td></tr>
+    <tr><td><b>ext-apps</b></td><td>The official SDK + spec repo (<code>@modelcontextprotocol/ext-apps</code>). <code>App</code> class for the widget, <code>registerAppTool/Resource</code> for the server.</td><td>Current</td></tr>
+    <tr><td><b><code>ui://</code></b></td><td>URI scheme marking a resource as "this is a widget, not data".</td><td>Current</td></tr>
+    <tr><td><b><code>ui.resourceUri</code></b></td><td>Tool metadata pointing at the widget resource. THE tool→widget link.</td><td>Current</td></tr>
+    <tr><td><b><code>text/html;profile=mcp-app</code></b></td><td>The mimeType a widget resource must declare. Hosts match on it exactly.</td><td>Current</td></tr>
+    <tr><td><b><code>ui.domain</code></b></td><td>Opt-in stable origin your widget is served from. <em>Each platform validates it differently</em> — see the matrix. Only needed if your widget does its own OAuth or wants cross-conversation identity.</td><td>Current</td></tr>
+    <tr><td><b><code>ui.csp</code></b></td><td>Which external hosts your iframe may <code>connect</code> to (APIs, websockets) or load <code>resources</code> from. Everything else is blocked by the sandbox.</td><td>Current</td></tr>
+    <tr><td><b><code>structuredContent</code></b></td><td>The typed JSON half of a tool result. It's what your widget receives and paints. The <code>content</code> text half is what the model reads.</td><td>Current</td></tr>
+    <tr><td><b><code>_meta</code></b></td><td>MCP's side-channel on everything (tools, resources, results). Widget config lives in <code>_meta.ui.*</code>; data the model shouldn't see (like Nexus's InstantDB token) rides in result <code>_meta</code>.</td><td>Current</td></tr>
+    <tr><td><b><code>hostContext</code></b></td><td>What the host tells the widget at initialize: theme, locale, display mode, container size, tool-call info.</td><td>Current</td></tr>
+    <tr><td><b><code>window.openai</code></b></td><td>ChatGPT-only global injected into widget iframes. The era-2 API — still alive, now the vehicle for ChatGPT-only extras (file upload, checkout, display modes).</td><td>Legacy + extensions</td></tr>
+    <tr><td><b><code>openai/outputTemplate</code></b></td><td>Era-2 name for <code>ui.resourceUri</code>. Still honored as an alias. Not deprecated; not required.</td><td>Legacy alias</td></tr>
+    <tr><td><b>skybridge</b></td><td>OpenAI's internal name for its widget runtime — survives in the old mimeType <code>text/html+skybridge</code> and in community framework names. If you see it, you're reading era-2 material.</td><td>Legacy</td></tr>
+    <tr><td><b><code>claudemcpcontent.com</code></b></td><td>Claude's widget sandbox origin. Your connector's widgets are served from <code>{hash}.claudemcpcontent.com</code> where hash = first 32 hex chars of SHA-256 of your exact connector URL.</td><td>Current, Claude</td></tr>
+    <tr><td><b>mcp-ui</b></td><td>The community ancestor project. Its ideas became the standard; the library itself is now historical.</td><td>Legacy</td></tr>
+  </table></div>
+</section>
+
+<section id="matrix">
+  <div class="num">04 · The platforms</div>
+  <h2>Same protocol, different animals</h2>
+  <p class="lead">Both platforms run MCP Apps. Where they differ is everything around the iframe: discovery, domains, persistence, review, and when they bother to show your widget at all.</p>
+  <div class="tablewrap"><table>
+    <tr><th></th><th>ChatGPT</th><th>Claude</th></tr>
+    <tr><td><b>Protocol stance</b></td><td>Standard + proprietary extension layer (<code>openai/*</code>, <code>window.openai</code>)</td><td>Closest to pure standard</td></tr>
+    <tr><td><b>Tool→widget link</b></td><td><code>ui.resourceUri</code>; honors <code>openai/outputTemplate</code> as alias</td><td><code>ui.resourceUri</code> only</td></tr>
+    <tr><td><b>Status strings while tool runs</b></td><td><code>openai/toolInvocation/invoking·invoked</code> ("Logging to Nexus…") — no standard equivalent</td><td>Not supported</td></tr>
+    <tr><td><b><code>ui.domain</code> rule</b></td><td>Your own HTTPS origin (e.g. <code>https://mcp.nexus.kushalsm.com</code>)</td><td>Must be exactly <code>{sha256(connectorURL)[:32]}.claudemcpcontent.com</code> — or omit it</td></tr>
+    <tr><td><b>Iframe instances</b></td><td>Re-renders per turn</td><td><b>Every tool call mounts a new persistent iframe</b>; old ones stay live (official "supersession" pattern exists to disable them)</td></tr>
+    <tr><td><b>Result replay</b></td><td>Delivers on mount; refetches ALL resources every turn (no caching — keep widgets lean)</td><td>Replays <code>tool-result</code> after <code>connect()</code>; docs warn it can be slow → build a timeout fallback</td></tr>
+    <tr><td><b>Big results</b></td><td>—</td><td>&gt;~150K chars + code-exec sandbox on → widget gets a file pointer, <b>never hydrates</b></td></tr>
+    <tr><td><b>The display rule</b></td><td>iOS: widget-bearing call must be the ONLY tool call in the turn</td><td>Multi-call turns (tool search → history → log) get folded into the thinking block — <b>no iframe is mounted at all</b> (verified live today)</td></tr>
+    <tr><td><b>Mobile</b></td><td>iOS renderer historically flaky (our July-12 episode)</td><td>iOS = WKWebView, Beta. Rehydration differs from web (<code>toolInfo.id</code> undefined); sends <code>ui/resource-teardown</code> on nav-away. Our data-hydration bug is here.</td></tr>
+    <tr><td><b>Debugging</b></td><td>Dev mode (has its own widget bugs) + browser devtools; MCP Inspector</td><td>Desktop: built-in devtools (iframe-in-iframe). iOS: Safari → connected iPhone → Web Inspector</td></tr>
+    <tr><td><b>Ship process</b></td><td>App directory submission + review; reviewer account seeding</td><td>Custom connector today (Beta chip); directory story still forming</td></tr>
+    <tr><td><b>Theming</b></td><td>Own look; <code>prefersBorder</code> hint</td><td>Pushes theme via <code>hostContext</code>; official "transparent theming" guide to blend with chat</td></tr>
+  </table></div>
+  <p>The one-sentence takeaway: <mark>ChatGPT treats your widget as an app in its store; Claude treats it as a connector rendering into its chat.</mark> Same protocol, different products around it.</p>
+</section>
+
+<section id="expo">
+  <div class="num">05 · The Expo question</div>
+  <h2>"Is there no mature build-once-run-everywhere?"</h2>
+  <p class="lead">There is — it's just young. And unusually, <strong>the official SDK is the Expo</strong>, not a third party.</p>
+  <div class="card">
+    <p><strong><code>@modelcontextprotocol/ext-apps</code></strong> is explicitly designed for cross-host:</p>
+    <ul>
+      <li><code>registerAppTool()</code> / <code>registerAppResource()</code> on the server — you declare once, it emits the platform-specific metadata for both hosts.</li>
+      <li><code>App.connect()</code> in the widget — auto-detects whether it's inside ChatGPT or Claude and picks the right transport.</li>
+      <li>Handles the whole request surface you'd forget by hand: <code>ping</code>, <code>ui/resource-teardown</code>, auto-resize, correct initialize params.</li>
+      <li>Examples in vanilla JS, React, Vue, Svelte + an official migration guide from the old OpenAI Apps SDK + a Claude Code skills plugin (<code>/plugin marketplace add modelcontextprotocol/ext-apps</code>).</li>
+    </ul>
+  </div>
+  <div class="tablewrap"><table>
+    <tr><th>Option</th><th>What it is</th><th>Maturity read</th></tr>
+    <tr><td><b>ext-apps SDK</b></td><td>Official standard + cross-host helpers</td><td class="ok">The default. Bet here.</td></tr>
+    <tr><td><b>mcp-use</b></td><td>Fullstack framework + local Inspector that emulates both ChatGPT and Claude runtimes (protocol toggle); React hooks abstract host differences</td><td class="meh">Useful, esp. the Inspector. Young.</td></tr>
+    <tr><td><b>Skybridge (framework)</b></td><td>Community React framework, ChatGPT-centric (we trialed it for Nexus)</td><td class="meh">ChatGPT-first, not a cross-host answer</td></tr>
+    <tr><td><b>mcp-ui</b></td><td>The ancestor library</td><td class="no">Historical — read, don't adopt</td></tr>
+    <tr><td><b>Hand-rolled bridge</b></td><td>What Nexus ChatGPT runs today (873 bytes)</td><td class="meh">Fine as a scalpel; you own every spec change forever</td></tr>
+  </table></div>
+  <p>Honest caveat from our own week: the one time we bundled the official runtime <em>inlined into the widget HTML</em> for ChatGPT, it crashed ("Runtime error") and the tiny hand-rolled shim fixed it. That crash was never root-caused — likely a bundling artifact, possibly a real ChatGPT bug worth filing. So "bet on ext-apps" comes with "and root-cause that crash before re-adopting it on ChatGPT". It already runs Nexus's Claude widget in production today.</p>
+  <p>And the Expo analogy has the same fine print as actual Expo: the shared layer covers the protocol, but <strong>each store keeps its own rules</strong> — ChatGPT's review process and <code>openai/*</code> extras, Claude's domain hash and connector flow. You can share the app; you can't share the paperwork.</p>
+</section>
+
+<section id="cases">
+  <div class="num">06 · Case files</div>
+  <h2>Everything that bit us, with verdicts</h2>
+
+  <div class="case"><span class="status closed">CLOSED</span>
+    <p class="sym">"Failed to fetch template" on ChatGPT</p>
+    <p class="why">The widget resource still declared the era-2 mimeType <code>text/html+skybridge</code>. ChatGPT's client now asks for <code>text/html;profile=mcp-app</code> and aborts on mismatch (confirmed by live-tailing prod).</p>
+    <p class="rule">Rule: the mimeType is a handshake, not a label.</p>
+  </div>
+
+  <div class="case"><span class="status closed">CLOSED</span>
+    <p class="sym">"Error loading app — Runtime error" on ChatGPT, every turn</p>
+    <p class="why">The 438&nbsp;KB official ext-apps browser runtime, inlined into the widget document, crashed at boot. Replaced with an 873-byte direct implementation of the same <code>ui/*</code> handshake → renders. (Why the big bundle crashes inlined: still unexplained. A same-day community thread blaming dev mode was a red herring for us.)</p>
+    <p class="rule">Rule: when a widget dies at boot, suspect the biggest script you inlined.</p>
+  </div>
+
+  <div class="case"><span class="status closed">CLOSED</span>
+    <p class="sym">Claude refused to render: "Invalid ui.domain format"</p>
+    <p class="why">Claude requires <code>ui.domain</code> to be its hash form. For our URL: <code>9b68940b…a79.claudemcpcontent.com</code> — the hash covers the <em>exact</em> connector URL string, trailing slash included.</p>
+    <p class="rule">Rule: compute the hash from the URL in Settings→Connectors, character for character.</p>
+  </div>
+
+  <div class="case"><span class="status closed">CLOSED</span>
+    <p class="sym">Widget renders but shows a stale version</p>
+    <p class="why">Hosts cache the widget resource by URI. Same URI + new HTML = old widget. ChatGPT sometimes also keeps a stale tool→widget binding until the app is deleted and recreated (our Mixtome/Coffeetable lesson).</p>
+    <p class="rule">Rule: bump the <code>ui://…vN</code> version on every behavioral change. If ChatGPT still won't update: delete + recreate the app, refresh won't do it.</p>
+  </div>
+
+  <div class="case"><span class="status closed">CLOSED · found today</span>
+    <p class="sym">Claude: tool ran fine, no widget anywhere in the chat</p>
+    <p class="why">The prompt was "first read history, then log". Claude made multiple tool calls in one turn (tool search → history → log), folded the whole run into the collapsed thinking block, and mounted <b>zero</b> iframes. The identical log as a single standalone call mounts the widget (verified: 1 iframe vs 0, same connector, same day).</p>
+    <p class="rule">Rule: widget tools want clean single-call turns — on ChatGPT iOS AND Claude. Nexus's server instructions already demand this; they now provably apply to Claude too.</p>
+  </div>
+
+  <div class="case"><span class="status open">OPEN</span>
+    <p class="sym">Claude iOS: statues render, data never arrives</p>
+    <p class="why">The HTML shell loads (CSS paints) but no tool result reaches the widget handler. Widget code is exonerated: it fully renders under a spec-correct mock host and on Claude web. Two suspects remain: iOS never completes the handshake, or never replays <code>tool-result</code>. The widget currently fails silent in both cases (no timeout, no default paint), so a screenshot can't tell them apart.</p>
+    <p class="rule">Next: plug the phone into the Mac → Safari → Develop → Claude WKWebView → watch the console. And ship the graceful-degradation fix regardless.</p>
+  </div>
+
+  <div class="case"><span class="status open">OPEN · latent</span>
+    <p class="sym">Landmines we know about and haven't stepped on yet</p>
+    <p class="why">Claude's ~150K-char result limit (widget gets a file pointer, never hydrates) — Nexus history payloads should stay paginated. ChatGPT refetches every resource every turn — keep the widget document lean. Claude mounts a new live iframe per call — old Nexus cards in a long chat are all still running; the supersession pattern exists when we care. iOS omits the <code>Referer</code> header — allowlist by <code>Origin</code> if the widget ever fetches cross-origin.</p>
+    <p class="rule">Rule: reread this section before each new feature, not after it breaks.</p>
+  </div>
+</section>
+
+<section id="nexus">
+  <div class="num">07 · Where Nexus stands</div>
+  <h2>The current machine</h2>
+  <figure>
+  <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="10.5">
+    <rect x="8" y="8" width="164" height="86" rx="10" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="90" y="26" text-anchor="middle" fill="var(--accent)" font-weight="700">CHATGPT</text>
+    <text x="90" y="44" text-anchor="middle" fill="var(--ink)">worker: nexus-mcp</text>
+    <text x="90" y="59" text-anchor="middle" fill="var(--ink-soft)">mcp.nexus.kushalsm.com</text>
+    <text x="90" y="76" text-anchor="middle" fill="var(--ink)">873-byte shim · InstantDB live</text>
+    <rect x="188" y="8" width="164" height="86" rx="10" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="270" y="26" text-anchor="middle" fill="var(--accent)" font-weight="700">CLAUDE</text>
+    <text x="270" y="44" text-anchor="middle" fill="var(--ink)">worker: nexus-mcp-claude</text>
+    <text x="270" y="59" text-anchor="middle" fill="var(--ink-soft)">claude-mcp.nexus.kushalsm.com</text>
+    <text x="270" y="76" text-anchor="middle" fill="var(--ink)">official App class · no InstantDB</text>
+    <line x1="90" y1="94" x2="150" y2="132" stroke="var(--line)" stroke-width="2"/>
+    <line x1="270" y1="94" x2="210" y2="132" stroke="var(--line)" stroke-width="2"/>
+    <rect x="70" y="132" width="220" height="44" rx="10" fill="var(--accent)"/>
+    <text x="180" y="150" text-anchor="middle" fill="var(--paper)" font-weight="700">SHARED CORE</text>
+    <text x="180" y="166" text-anchor="middle" fill="var(--paper)">5 tools · schemas · OAuth · widget UI code</text>
+    <line x1="180" y1="176" x2="180" y2="196" stroke="var(--line)" stroke-width="2"/>
+    <rect x="110" y="196" width="140" height="34" rx="10" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="180" y="217" text-anchor="middle" fill="var(--ink)">InstantDB (one dataset)</text>
+  </svg>
+  <figcaption>One product, one core, two host-tuned deployments. Share behavior; separate host quirks.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <tr><th>Surface</th><th>Status</th><th>Note</th></tr>
+    <tr><td>ChatGPT web</td><td class="ok">Renders</td><td>standard-only after the rewrite; resubmission pending</td></tr>
+    <tr><td>ChatGPT iOS</td><td class="meh">Untested</td><td>test before resubmitting — history says iOS punishes assumptions</td></tr>
+    <tr><td>Claude web</td><td class="ok">Renders</td><td>hydration + autoResize verified live today</td></tr>
+    <tr><td>Claude iOS</td><td class="no">Shell only</td><td>open case above</td></tr>
+  </table></div>
+  <h3>Open risks being tracked (the short list)</h3>
+  <ul>
+    <li>The ChatGPT shim is off-spec in three tolerated-for-now ways: wrong <code>ui/initialize</code> field names, ignores host requests (teardown), never sends <code>size-changed</code>.</li>
+    <li>Failure is silent by design: no connect timeout, no default paint, no visible error — this is exactly why Claude iOS is hard to diagnose.</li>
+    <li>Dropping the <code>openai/*</code> extras also dropped real product polish ("Logging to Nexus…" status line, widget description) that has no standard replacement.</li>
+    <li>Tests validate the bridge against its own mock, not against either real host — the only thing that has actually broken all week is real-host behavior.</li>
+    <li>Prod is running code that exists only in a dirty working tree. Commit it.</li>
+  </ul>
+</section>
+
+<section id="rules">
+  <div class="num">08 · Doctrine</div>
+  <h2>Rules to build by</h2>
+  <div class="card"><ol>
+    <li><strong>The standard is the base; extensions are per-store paperwork.</strong> Declare with <code>ui.*</code>; add <code>openai/*</code> only for ChatGPT-only features you actually want. That's not a fallback — there's nothing it falls back from.</li>
+    <li><strong>One widget tool call per turn.</strong> Bake it into server instructions for every host. Reads answer in text; the card renders on writes.</li>
+    <li><strong>Bump the <code>ui://…vN</code> URI on every behavioral change.</strong> Caches are ruthless; version numbers are free.</li>
+    <li><strong>Fail visibly.</strong> Timeout the handshake, paint a default state, show one quiet line when data never arrives. A blank card on someone's phone is undebuggable by definition.</li>
+    <li><strong>Keep payloads lean.</strong> Claude hard-stops hydration past ~150K chars; ChatGPT re-downloads your resources every turn.</li>
+    <li><strong>Trust only real hosts.</strong> Mocks prove your code is self-consistent, never that it works. Smoke-test on ChatGPT web, ChatGPT iOS, Claude web, Claude iOS before calling anything done.</li>
+    <li><strong>When mobile misbehaves, attach an inspector, don't guess.</strong> Claude iOS = Safari Web Inspector over cable. ChatGPT iOS = the single-call rule first.</li>
+    <li><strong>Deploy → verify → commit → push.</strong> Same hour. Prod running uncommitted code is how you lose a working state you can't rebuild.</li>
+    <li><strong>Reread the docs monthly.</strong> This ecosystem shipped three formats in nine months. Assume this page has a half-life; check the sources below when something smells stale.</li>
+  </ol></div>
+</section>
+
+<section id="sources">
+  <div class="num">09 · Receipts</div>
+  <h2>Sources worth bookmarking</h2>
+  <div class="srcs">
+  <h3>The standard</h3>
+  <ul>
+    <li><a href="https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/">MCP Apps announcement</a> — the history + who supports it</li>
+    <li><a href="https://github.com/modelcontextprotocol/ext-apps">ext-apps repo</a> — spec, SDK, examples in every framework</li>
+    <li><a href="https://modelcontextprotocol.github.io/ext-apps/api/documents/Quickstart.html">SDK quickstart</a> · <a href="https://modelcontextprotocol.github.io/ext-apps/api/documents/Migrate_OpenAI_App.html">migration from the old Apps SDK</a></li>
+  </ul>
+  <h3>ChatGPT</h3>
+  <ul>
+    <li><a href="https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt">MCP Apps compatibility in ChatGPT</a> — their official stance on standard vs <code>openai/*</code></li>
+    <li><a href="https://developers.openai.com/apps-sdk/reference">Apps SDK reference</a> — every <code>_meta</code> key ChatGPT reads</li>
+    <li><a href="https://developers.openai.com/apps-sdk/deploy/troubleshooting">Troubleshooting</a></li>
+  </ul>
+  <h3>Claude</h3>
+  <ul>
+    <li><a href="https://claude.com/docs/connectors/building/mcp-apps/getting-started">Getting started</a> · <a href="https://claude.com/docs/connectors/building/mcp-apps/cross-compatibility">cross-platform guide</a> (the <code>ui.domain</code> hash lives here)</li>
+    <li><a href="https://claude.com/docs/connectors/building/mcp-apps/troubleshooting">Troubleshooting</a> — the 150K rule, iOS inspector setup, Referer gotcha</li>
+    <li><a href="https://claude.com/docs/connectors/building/mcp-apps/instance-supersession">Instance supersession</a> — secretly the best doc on how Claude actually mounts widgets</li>
+  </ul>
+  <h3>Ecosystem</h3>
+  <ul>
+    <li><a href="https://docs.mcp-use.com/inspector/debugging-chatgpt-apps">mcp-use Inspector</a> — emulates both hosts locally</li>
+    <li><a href="https://community.openai.com/t/runtime-error-on-all-resource-widgets-in-developer-mode/1379591">The dev-mode "Runtime error" thread</a> — for when it looks like your bug but isn't</li>
+  </ul>
+  </div>
+  <p class="foot">Nexus internal · written for Kushal by Claude after a day in the trenches · nexus.kushalsm.com/clarity</p>
+</section>
+
+</main>
+<script>
+  const bar = document.getElementById('bar');
+  addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  }, {passive:true});
+</script>
+</body>
+</html>
