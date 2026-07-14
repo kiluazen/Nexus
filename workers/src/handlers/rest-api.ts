@@ -2,7 +2,7 @@ import type { NexusEnv, NexusProps } from "../types";
 import { logEntries, getHistory, updateEntry } from "../data/entries";
 import { manageFriends } from "../data/friends";
 import { ValidationError } from "../lib/dates";
-import { UpdateInput } from "../schema/tool-inputs";
+import { LogInput, UpdateInput } from "../schema/tool-inputs";
 
 interface ApiCtx {
   props: NexusProps;
@@ -36,8 +36,12 @@ async function dispatch(req: Request, env: NexusEnv, ctx: ApiCtx): Promise<Respo
       });
     }
     if (req.method === "POST" && url.pathname === "/api/v1/log") {
-      const body = await readJson<{ entries: unknown[]; date?: string }>(req);
-      return Response.json(await logEntries(env, user, { entries: body.entries ?? [], date: body.date }));
+      const raw = await readJson<Record<string, unknown>>(req);
+      const body = LogInput.parse({
+        ...raw,
+        mutation_id: raw.mutation_id ?? req.headers.get("Idempotency-Key"),
+      });
+      return Response.json(await logEntries(env, user, body));
     }
     if (req.method === "GET" && url.pathname === "/api/v1/history") {
       const qp = (k: string) => url.searchParams.get(k) ?? undefined;
@@ -53,7 +57,11 @@ async function dispatch(req: Request, env: NexusEnv, ctx: ApiCtx): Promise<Respo
       return Response.json(result);
     }
     if (req.method === "POST" && url.pathname === "/api/v1/update") {
-      const body = UpdateInput.parse(await readJson<unknown>(req));
+      const raw = await readJson<Record<string, unknown>>(req);
+      const body = UpdateInput.parse({
+        ...raw,
+        mutation_id: raw.mutation_id ?? req.headers.get("Idempotency-Key"),
+      });
       return Response.json(await updateEntry(env, user, body));
     }
     if (req.method === "POST" && url.pathname === "/api/v1/friends") {

@@ -19,7 +19,7 @@
 // BUMP this suffix on breaking widget changes so clients fetch fresh.
 import { VENUS_DATA_URI, DISCOBOLUS_DATA_URI } from "./gods";
 
-export const WIDGET_URI = "ui://widget/nexus-today-v13.html";
+export const WIDGET_URI = "ui://widget/nexus-today-v15.html";
 
 // Dark theme tokens, emitted twice in the stylesheet — once under the
 // prefers-color-scheme fallback and once under the host-declared
@@ -266,7 +266,18 @@ export function widgetHtml(): string {
   // Standard MCP Apps bridge. The tiny bundled client performs the
   // ui/initialize handshake, receives tool results, and issues tools/call.
   function callTool(name, args) {
-    return window.NexusMcpBridge.callTool(name, args);
+    return window.NexusMcpBridge.callTool(name, args).then(function (result) {
+      if (result && result.isError) {
+        var message = "Nexus rejected the change.";
+        try {
+          var text = result.content && result.content[0] && result.content[0].text;
+          var parsed = text ? JSON.parse(text) : null;
+          if (parsed && parsed.error) message = parsed.error;
+        } catch (e) { /* preserve the safe default */ }
+        throw new Error(message);
+      }
+      return (result && result.structuredContent) || result || {};
+    });
   }
 
   function fmtDate(d) {
@@ -519,7 +530,11 @@ export function widgetHtml(): string {
     var d = { period: period, workouts: [], meals: [], weights: [] };
     (entries || []).forEach(function (r) {
       var date = new Date(r.entry_date).toISOString().slice(0, 10);
-      var base = Object.assign({ id: r.id, date: date }, r.data || {});
+      var base = Object.assign({
+        id: r.id,
+        date: date,
+        state_version: r.version || String(r.updated_at),
+      }, r.data || {});
       if (r.type === "workout") {
         if (base.exercise_key && prevByKey[base.exercise_key]) base.previous = prevByKey[base.exercise_key];
         d.workouts.push(base);
@@ -530,9 +545,35 @@ export function widgetHtml(): string {
     return d;
   }
 
-  function writeEntry(id, data) {
-    if (db) return Promise.resolve(db.transact(db.tx.entries[id].update({ data: data, updated_at: Date.now() })));
-    return callTool("nexus_update_entry", { entry_id: id, data: data });
+  function writeEntry(entry, data) {
+    if (!entry || !entry.id || !entry.state_version) {
+      return Promise.reject(new Error("This entry is missing its state version. Refresh Nexus and try again."));
+    }
+    return callTool("nexus_update_entry", {
+      mutation_id: uuid4(),
+      entry_id: entry.id,
+      expected_state_version: entry.state_version,
+      data: data,
+    });
+  }
+
+  function handleWriteFailure(error) {
+    var message = (error && error.message) || "Couldn't save. Try again.";
+    if (message.indexOf("changed after this snapshot") === -1) {
+      saveError = message;
+      render(currentData);
+      return Promise.resolve();
+    }
+    // An old mounted card tried to edit a newer row. Refresh that card from
+    // the shared source of truth instead of leaving the stale snapshot visible.
+    return callTool("nexus_get_history", { date: currentPeriod().from }).then(function (latest) {
+      applyData(latest);
+      saveError = "This entry changed elsewhere. Nexus refreshed the latest version; review it and save again.";
+      render(currentData);
+    }).catch(function () {
+      saveError = message;
+      render(currentData);
+    });
   }
   function saveMeal(id) {
     var m = findMeal(id);
@@ -550,12 +591,11 @@ export function widgetHtml(): string {
     saveError = "";
     var btn = document.getElementById("nx-save-" + id);
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    writeEntry(id, data).then(function () {
-      m.items = data.items; m.totals = totals; render(currentData);
-    }).catch(function (e) {
-      saveError = (e && e.message) || "Couldn't save. Try again.";
+    writeEntry(m, data).then(function (result) {
+      m.items = data.items; m.totals = totals;
+      if (result && result.state_version) m.state_version = result.state_version;
       render(currentData);
-    });
+    }).catch(handleWriteFailure);
   }
 
   function uuid4() {
@@ -580,35 +620,24 @@ export function widgetHtml(): string {
     if (!isFinite(v) || v <= 0) { input.value = cur != null ? n(cur) : ""; return; }
     if (cur != null && n(v) === n(cur)) return;
     wtSaving = true;
-    var done = function () {
+    var done = function (result) {
       wtSaving = false;
-      currentData.weights = [{ id: (weights[0] && weights[0].id) || "wt-local", weight_kg: v }];
+      var logged = result && result.logged && result.logged[0];
+      currentData.weights = [{
+        id: (weights[0] && weights[0].id) || (logged && logged.id) || "wt-local",
+        weight_kg: v,
+        state_version: (result && result.state_version) || (logged && logged.state_version) || (weights[0] && weights[0].state_version),
+      }];
       saveError = ""; render(currentData);
     };
     var fail = function (e) {
       wtSaving = false;
-      saveError = (e && e.message) || "Couldn't save. Try again.";
-      render(currentData);
+      handleWriteFailure(e);
     };
-    if (weights.length) { writeEntry(weights[0].id, { weight_kg: v }).then(done).catch(fail); return; }
-    // No weight entry today yet — create one. The live session writes the row
-    // directly (owner link = the signed-in widget user); otherwise fall back
-    // to the log tool.
-    if (db) {
-      db.getAuth().then(function (a) {
-        var uid = a && (a.id || (a.user && a.user.id));
-        if (!uid) throw new Error("Not signed in — reopen the app.");
-        var period = currentPeriod();
-        var now = Date.now();
-        return db.transact(
-          db.tx.entries[uuid4()]
-            .update({ type: "weight", entry_date: Date.parse(period.from + "T00:00:00Z"), data: { weight_kg: v }, created_at: now, updated_at: now })
-            .link({ owner: uid })
-        );
-      }).then(done).catch(fail);
-      return;
-    }
-    callTool("nexus_log_entries", { entries: [{ type: "weight", weight_kg: v }], date: currentPeriod().from })
+    if (weights.length) { writeEntry(weights[0], { weight_kg: v }).then(done).catch(fail); return; }
+    // All writes use MCP tools. InstantDB is a read-only live subscription,
+    // never an alternate mutation path that bypasses receipts/version checks.
+    callTool("nexus_log_entries", { mutation_id: uuid4(), entries: [{ type: "weight", weight_kg: v }], date: currentPeriod().from })
       .then(done).catch(fail);
   }
   function stepSet(kind, i, dir) {
@@ -654,12 +683,11 @@ export function widgetHtml(): string {
     saveError = "";
     var btn = document.getElementById("nx-wsave-" + id);
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    writeEntry(id, data).then(function () {
-      w.sets = sets; render(currentData);
-    }).catch(function (e) {
-      saveError = (e && e.message) || "Couldn't save. Try again.";
+    writeEntry(w, data).then(function (result) {
+      w.sets = sets;
+      if (result && result.state_version) w.state_version = result.state_version;
       render(currentData);
-    });
+    }).catch(handleWriteFailure);
   }
 
   root.addEventListener("click", function (e) {
@@ -788,6 +816,13 @@ export function widgetHtml(): string {
     if (!ctx) return;
     var doc = document.documentElement;
     if (ctx.platform) doc.setAttribute("data-platform", ctx.platform);
+    var dims = ctx.containerDimensions;
+    if (dims) {
+      var width = dims.width != null ? dims.width : dims.maxWidth;
+      var height = dims.height != null ? dims.height : dims.maxHeight;
+      if (width != null) doc.style.setProperty("--nx-container-w", Math.max(0, width | 0) + "px");
+      if (height != null) doc.style.setProperty("--nx-container-h", Math.max(0, height | 0) + "px");
+    }
     var s = ctx.safeAreaInsets;
     if (s) {
       doc.style.setProperty("--nx-safe-t", (s.top | 0) + "px");
@@ -801,6 +836,12 @@ export function widgetHtml(): string {
     hydrateToolResult(result.structuredContent || null, result._meta || {});
   }).then(function () {
     applyHostLayout();
+    if (typeof window.NexusMcpBridge.onHostContextChanged === "function") {
+      window.NexusMcpBridge.onHostContextChanged(function () {
+        applyHostLayout();
+        pushSize();
+      });
+    }
     // Connected but no tool result after a beat (hosts replay it late, or on
     // some surfaces not at all): paint the empty day frame instead of leaving
     // two statues and silence. A late result still repaints over this.

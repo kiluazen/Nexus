@@ -1,6 +1,6 @@
 // The one Nexus widget bridge, identical on every host (ChatGPT, Claude, and
 // anything else that speaks MCP Apps). All protocol plumbing — ui/initialize,
-// tool-result delivery, tools/call, size notifications, ping/teardown replies —
+// tool-result delivery, tools/call, and size notifications —
 // comes from the official @modelcontextprotocol/ext-apps App class. No
 // hand-rolled protocol code lives in this repo.
 //
@@ -42,6 +42,16 @@ function applyContext(ctx: McpUiHostContext | undefined) {
 
 let connectPromise: Promise<void> | null = null;
 let removeToolResultListener: (() => void) | null = null;
+const hostContextListeners = new Set<(context: McpUiHostContext | undefined) => void>();
+
+// The SDK deliberately requires the application to acknowledge teardown.
+// Register before connect so a fast host cannot race initialization.
+app.onteardown = async () => {
+  removeToolResultListener?.();
+  removeToolResultListener = null;
+  hostContextListeners.clear();
+  return {};
+};
 
 globalThis.NexusMcpBridge = {
   connect(handler: (result: ToolResult) => void): Promise<void> {
@@ -66,7 +76,11 @@ globalThis.NexusMcpBridge = {
         clearTimeout(timer);
       }
       applyContext(app.getHostContext());
-      app.addEventListener("hostcontextchanged", () => applyContext(app.getHostContext()));
+      app.addEventListener("hostcontextchanged", () => {
+        const context = app.getHostContext();
+        applyContext(context);
+        for (const listener of hostContextListeners) listener(context);
+      });
     })();
     return connectPromise;
   },
@@ -79,16 +93,22 @@ globalThis.NexusMcpBridge = {
     return app.getHostContext();
   },
 
-  // Explicit size push for state transitions. Measures the document the same
-  // way the SDK's autoResize does (max-content trick, so a shrink is actually
-  // reported instead of ratcheting at the old height).
+  onHostContextChanged(handler: (context: McpUiHostContext | undefined) => void): () => void {
+    hostContextListeners.add(handler);
+    return () => hostContextListeners.delete(handler);
+  },
+
+  // Explicit size push for state transitions. Measure Nexus's intrinsic root,
+  // not the iframe document whose height may already reflect a host allocation.
   sendSize(): void {
-    const doc = document.documentElement;
-    const prev = doc.style.height;
-    doc.style.height = "max-content";
-    const height = Math.ceil(doc.getBoundingClientRect().height);
-    doc.style.height = prev;
-    void app.sendSizeChanged({ width: Math.ceil(window.innerWidth), height });
+    const root = document.getElementById("nexus-root") ?? document.body;
+    const prev = root.style.height;
+    root.style.height = "max-content";
+    const rect = root.getBoundingClientRect();
+    const height = Math.ceil(rect.height);
+    const width = Math.ceil(rect.width || window.innerWidth);
+    root.style.height = prev;
+    void app.sendSizeChanged({ width, height });
     // ChatGPT's extension channel. Standard size-changed is grow-only on the
     // hosts we've measured; where the host injects window.openai, its native
     // height notification also resizes the frame back down. Feature-detected:
@@ -107,6 +127,7 @@ declare global {
     connect(handler: (result: ToolResult) => void): Promise<void>;
     callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
     hostContext(): McpUiHostContext | undefined;
+    onHostContextChanged(handler: (context: McpUiHostContext | undefined) => void): () => void;
     sendSize(): void;
   };
 }

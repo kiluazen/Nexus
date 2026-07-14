@@ -1,5 +1,5 @@
 import type { NexusEnv } from "../types";
-import { adminDb, userDb, rawQuery, id as newId } from "../instant";
+import { adminDb, userDb, rawQuery } from "../instant";
 import {
   computeMealTotals,
   parseEntry,
@@ -12,6 +12,7 @@ import { ValidationError, parseDate, todayUtc, addDaysUtc } from "../lib/dates";
 import { getGoalForDate } from "./goals";
 import { exerciseUpsertChunks } from "./exercises";
 import type { ExerciseCatalogInput } from "../schema/entry-shapes";
+import { deterministicMutationId, prepareMutation, receiptChunk } from "./mutations";
 
 export interface UserCtx {
   userId: string;
@@ -38,13 +39,16 @@ type EntryRow = {
   data: Record<string, unknown>;
   created_at: number | string;
   updated_at: number | string;
+  version?: string;
 };
 
 export async function logEntries(
   env: NexusEnv,
   user: UserCtx,
-  args: { entries: unknown[]; date?: string },
+  args: { mutation_id: string; entries: unknown[]; date?: string },
 ): Promise<{ logged: unknown[] }> {
+  const prepared = await prepareMutation(env, user, "nexus_log_entries", args.mutation_id, args);
+  if (prepared.replay) return prepared.replay as { logged: unknown[] };
   const entryDate = parseDate(args.date);
   const dateMs = dateToMs(entryDate);
   const now = Date.now();
@@ -53,15 +57,19 @@ export async function logEntries(
   // authenticated props, never from tool input, so ownership is decided
   // server-side by construction.
   const db = adminDb(env);
-  const chunks = [];
+  // InstantDB's generated chunk type is entity-specific, while one atomic
+  // transaction intentionally spans entries, catalogue rows, and a receipt.
+  const chunks: Array<ReturnType<typeof receiptChunk> | ReturnType<typeof db.tx.entries[string]["update"]>> = [];
   const logged: Record<string, unknown>[] = [];
   const catalogItems: ExerciseCatalogInput[] = [];
 
-  for (const raw of args.entries) {
+  for (let index = 0; index < args.entries.length; index++) {
+    const raw = args.entries[index];
     // Validate against the flat, published input schema, then map to storage.
     const entry = parseEntryInput({ ...((raw as object) ?? {}) });
     const s = entryInputToStorage(entry);
-    const entryId = newId();
+    const entryId = await deterministicMutationId(prepared.receiptId, "entry", String(index));
+    const version = await deterministicMutationId(prepared.receiptId, "entry-version", String(index));
 
     chunks.push(
       db.tx.entries[entryId]!
@@ -73,13 +81,14 @@ export async function logEntries(
           data: s.data,
           created_at: now,
           updated_at: now,
+          version,
         })
         .link({ owner: user.userId }),
     );
 
     if (s.type === "workout") {
       if (s.catalog) catalogItems.push(s.catalog);
-      const out: Record<string, unknown> = { id: entryId, entry_type: "workout", exercise_key: s.exercise_key };
+      const out: Record<string, unknown> = { id: entryId, entry_type: "workout", exercise_key: s.exercise_key, state_version: version };
       if (Array.isArray(s.data.sets)) out.total_sets = (s.data.sets as unknown[]).length;
       if (typeof s.data.duration_min === "number") out.duration_min = s.data.duration_min;
       logged.push(out);
@@ -89,18 +98,21 @@ export async function logEntries(
         entry_type: "meal",
         meal_type: s.meal_type,
         totals: s.data.totals,
+        state_version: version,
       });
     } else {
-      logged.push({ id: entryId, entry_type: "weight", weight_kg: s.data.weight_kg });
+      logged.push({ id: entryId, entry_type: "weight", weight_kg: s.data.weight_kg, state_version: version });
     }
   }
 
   // Catalogue upsert rides in the same transact — a log is one write.
   if (catalogItems.length > 0) {
-    chunks.push(...(await exerciseUpsertChunks(env, user, catalogItems)) as typeof chunks);
+    chunks.push(...(await exerciseUpsertChunks(env, user, catalogItems)) as unknown as typeof chunks);
   }
-  if (chunks.length > 0) await db.transact(chunks);
-  return { logged };
+  const result = { logged };
+  chunks.push(receiptChunk(env, user, prepared, "nexus_log_entries", args.mutation_id, result));
+  if (chunks.length > 0) await db.transact(chunks as never);
+  return result;
 }
 
 export async function getHistory(
@@ -220,7 +232,11 @@ export async function getHistory(
 
   for (const row of rows) {
     const data = (row.data ?? {}) as Record<string, unknown>;
-    const base = { id: row.id, date: msToDate(row.entry_date) };
+    const base = {
+      id: row.id,
+      date: msToDate(row.entry_date),
+      state_version: row.version ?? String(row.updated_at),
+    };
     if (row.type === "workout") {
       workouts.push({ ...base, ...data });
     } else if (row.type === "meal") {
@@ -338,8 +354,10 @@ export async function getHistory(
 export async function updateEntry(
   env: NexusEnv,
   user: UserCtx,
-  args: { entry_id: string; data: EntryUpdateDataInput },
+  args: { mutation_id: string; entry_id: string; expected_state_version: string; data: EntryUpdateDataInput },
 ): Promise<Record<string, unknown>> {
+  const prepared = await prepareMutation(env, user, "nexus_update_entry", args.mutation_id, args);
+  if (prepared.replay) return prepared.replay;
   // Ownership check runs permission-scoped: if the entry belongs to someone
   // else, the scoped query simply can't see it.
   const scoped = userDb(env, user.email);
@@ -350,7 +368,14 @@ export async function updateEntry(
   if (!row) {
     throw new ValidationError(`Entry ${args.entry_id} not found or not owned by you.`);
   }
+  const currentVersion = row.version ?? String(row.updated_at);
+  if (args.expected_state_version !== currentVersion) {
+    throw new ValidationError(
+      `Entry ${args.entry_id} changed after this snapshot (expected ${args.expected_state_version}, current ${currentVersion}). Read the latest history and retry the intended edit with a new mutation_id.`,
+    );
+  }
   const entryType = row.type as "workout" | "meal" | "weight";
+  const nextVersion = await deterministicMutationId(prepared.receiptId, "entry-version");
 
   const reconstructed = { type: entryType, ...args.data };
   const entry = parseEntry(reconstructed);
@@ -360,24 +385,23 @@ export async function updateEntry(
   if (entry.type === "workout") {
     const { type: _t, ...d } = entry;
     storedData = d;
-    patch = { exercise_key: d.exercise_key.trim(), data: d, updated_at: Date.now() };
+    patch = { exercise_key: d.exercise_key.trim(), data: d, updated_at: Date.now(), version: nextVersion };
   } else if (entry.type === "meal") {
     const { type: _t, ...d } = entry;
     storedData = { ...d, totals: computeMealTotals(d.items) };
-    patch = { meal_type: d.meal_type, data: storedData, updated_at: Date.now() };
+    patch = { meal_type: d.meal_type, data: storedData, updated_at: Date.now(), version: nextVersion };
   } else {
     const { type: _t, ...d } = entry;
     storedData = d;
-    patch = { data: d, updated_at: Date.now() };
+    patch = { data: d, updated_at: Date.now(), version: nextVersion };
   }
 
   const db = adminDb(env);
-  await db.transact([db.tx.entries[args.entry_id]!.update(patch)]);
-
   const result: Record<string, unknown> = {
     id: args.entry_id,
     entry_type: entryType,
     updated: true,
+    state_version: nextVersion,
   };
   if (entryType === "workout") {
     result.exercise_key = (patch.exercise_key as string) ?? null;
@@ -391,5 +415,9 @@ export async function updateEntry(
   } else {
     result.weight_kg = (storedData as { weight_kg: number }).weight_kg;
   }
+  await db.transact([
+    db.tx.entries[args.entry_id]!.update(patch),
+    receiptChunk(env, user, prepared, "nexus_update_entry", args.mutation_id, result),
+  ]);
   return result;
 }

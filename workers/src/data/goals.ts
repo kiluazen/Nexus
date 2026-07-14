@@ -1,8 +1,9 @@
 import type { NexusEnv } from "../types";
-import { adminDb, userDb, rawQuery, id as newId } from "../instant";
+import { adminDb, userDb, rawQuery } from "../instant";
 import { DEFAULT_GOAL, mergeGoalUpdate, type GoalFields, type GoalInputT } from "../schema/goal-shapes";
 import { todayUtc } from "../lib/dates";
 import type { UserCtx } from "./entries";
+import { deterministicMutationId, prepareMutation, receiptChunk } from "./mutations";
 
 type GoalRow = {
   id: string;
@@ -37,6 +38,8 @@ export async function setGoal(
   user: UserCtx,
   args: GoalInputT,
 ): Promise<Record<string, unknown>> {
+  const prepared = await prepareMutation(env, user, "nexus_set_goal", args.mutation_id, args);
+  if (prepared.replay) return prepared.replay;
   const scoped = userDb(env, user.email);
   const latest = await rawQuery(scoped, {
     goals: { $: { order: { created_at: "desc" }, limit: 1 } },
@@ -45,7 +48,8 @@ export async function setGoal(
   const merged = mergeGoalUpdate(currentRow ? rowToFields(currentRow) : null, args);
 
   const db = adminDb(env);
-  const goalId = newId();
+  const goalId = await deterministicMutationId(prepared.receiptId, "goal");
+  const result = { ...merged, updated: true, effective_from: todayUtc(), reason: args.reason };
   await db.transact([
     db.tx.goals[goalId]!
       .update({
@@ -57,9 +61,10 @@ export async function setGoal(
         created_at: Date.now(),
       })
       .link({ owner: user.userId }),
+    receiptChunk(env, user, prepared, "nexus_set_goal", args.mutation_id, result),
   ]);
 
-  return { ...merged, updated: true, effective_from: todayUtc(), reason: args.reason };
+  return result;
 }
 
 /** The goal in effect for a given user on a given day: the latest row

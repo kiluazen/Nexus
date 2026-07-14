@@ -20,6 +20,9 @@ describe("widget ↔ bridge facade", () => {
     expect(html).toContain("NexusMcpBridge.callTool");
     // No protocol code inline: the widget never posts JSON-RPC itself.
     expect(html).not.toContain('jsonrpc: "2.0"');
+    expect(html).not.toContain("db.tx.entries");
+    expect(html).toContain("expected_state_version");
+    expect(html).toContain("mutation_id");
   });
 
   it("the bundle is the official App client with the full lifecycle", () => {
@@ -29,11 +32,12 @@ describe("widget ↔ bridge facade", () => {
     expect(bridge).toContain("ui/notifications/tool-result");
     expect(bridge).toContain("ui/notifications/size-changed");
     expect(bridge).toContain("ui/resource-teardown");
+    expect(bridge).toContain("onteardown");
   });
 });
 
 describe("standard MCP Apps handshake (real bundle, spec host)", () => {
-  it("initializes, receives a tool result, reports sizes", async () => {
+  it("initializes, receives a tool result, reports sizes, and acknowledges teardown", async () => {
     const messages: any[] = [];
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const parent = { postMessage(message: any) { messages.push(message); } };
@@ -47,7 +51,7 @@ describe("standard MCP Apps handshake (real bundle, spec host)", () => {
       console,
       parent,
       innerWidth: 640,
-      document: { documentElement: element, body: element, head: element, getElementById: () => null, createElement: () => ({ ...element, textContent: "" }) },
+      document: { documentElement: element, body: element, head: element, getElementById: (id: string) => id === "nexus-root" ? element : null, createElement: () => ({ ...element, textContent: "" }) },
       requestAnimationFrame(callback: () => void) { callback(); return 1; },
       ResizeObserver: class { constructor(_cb: () => void) {} observe() {} disconnect() {} },
       addEventListener(type: string, listener: (event: any) => void) { (listeners[type] ||= []).push(listener); },
@@ -55,6 +59,7 @@ describe("standard MCP Apps handshake (real bundle, spec host)", () => {
         listeners[type] = (listeners[type] || []).filter((c) => c !== listener);
       },
       setTimeout, clearTimeout, MessageEvent: class {},
+      AbortController,
     };
     context.window = context;
     context.globalThis = context;
@@ -108,6 +113,22 @@ describe("standard MCP Apps handshake (real bundle, spec host)", () => {
     const size = messages.find((m) => m.method === "ui/notifications/size-changed");
     expect(size).toBeTruthy();
     expect(size.params.height).toBeGreaterThan(0);
+
+    for (const listener of listeners.message || []) {
+      listener({
+        source: parent,
+        data: {
+          jsonrpc: "2.0",
+          id: 991,
+          method: "ui/resource-teardown",
+          params: {},
+        },
+      });
+    }
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(messages.find((m) => m.id === 991)).toMatchObject({ result: {} });
   });
 });
 

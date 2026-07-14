@@ -4,6 +4,9 @@ import { z } from "zod";
 // calories/protein_g/carbs_g/fat_g) so setting a goal doesn't require it to
 // learn a second naming convention.
 export const GoalInput = z.object({
+  mutation_id: z.string().min(8).max(128).describe(
+    "A unique id for this intended goal change. Reuse it only when retrying the same change.",
+  ),
   calories:  z.number().nonnegative().optional().describe("Daily calorie goal (kcal)"),
   protein_g: z.number().nonnegative().optional().describe("Daily protein goal (grams)"),
   carbs_g:   z.number().nonnegative().optional().describe("Daily carbs goal (grams)"),
@@ -11,6 +14,7 @@ export const GoalInput = z.object({
   reason:    z.string().optional().describe("Why the goal is changing, e.g. 'cutting for summer' — stored for context, shown in history"),
 });
 export type GoalInputT = z.infer<typeof GoalInput>;
+export type GoalPatch = Omit<GoalInputT, "mutation_id">;
 
 export interface GoalFields {
   calories: number;
@@ -27,7 +31,7 @@ export const DEFAULT_GOAL: GoalFields = { calories: 2100, protein_g: 120 };
  *  didn't mention — "just bump protein to 150" must not blank out calories —
  *  which is what makes every stored row complete, so "the goal on date X" is
  *  always a single self-contained row, never a patch you have to replay. */
-export function mergeGoalUpdate(current: GoalFields | null, patch: GoalInputT): GoalFields {
+export function mergeGoalUpdate(current: GoalFields | null, patch: GoalPatch): GoalFields {
   const base = current ?? DEFAULT_GOAL;
   return {
     calories:  patch.calories ?? base.calories,

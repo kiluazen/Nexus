@@ -36,6 +36,20 @@ const _schema = i.schema({
       data:         i.json(),                       // sets[] | items[] | { weight_kg }
       created_at:   i.date().indexed(),
       updated_at:   i.date().indexed(),
+      // Opaque optimistic-concurrency token. It changes on every accepted
+      // mutation and is returned to every host as `state_version`.
+      version:      i.string().optional(),
+    }),
+
+    // Durable retry receipts shared by every Nexus surface. The row id is a
+    // deterministic UUID derived from owner + tool + mutation_id; therefore
+    // an exact retry addresses the same receipt even across hosts/sessions.
+    mutationReceipts: i.entity({
+      tool:         i.string().indexed(),
+      mutation_id:  i.string().indexed(),
+      request_hash: i.string(),
+      result:       i.json(),
+      created_at:   i.date().indexed(),
     }),
 
     // Friend graph. One row per relationship; status moves pending -> active.
@@ -109,6 +123,10 @@ const _schema = i.schema({
     exerciseOwner: {
       forward: { on: 'exercises', has: 'one', label: 'owner' },
       reverse: { on: '$users', has: 'many', label: 'exercises' },
+    },
+    mutationReceiptOwner: {
+      forward: { on: 'mutationReceipts', has: 'one', label: 'owner' },
+      reverse: { on: '$users', has: 'many', label: 'mutationReceipts' },
     },
   },
 })

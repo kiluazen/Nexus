@@ -51,7 +51,9 @@ function fullWidgetHtml(): string {
 // sandbox handling of wss is inconsistent). No resourceDomains are needed:
 // the library is inlined, not fetched from a CDN.
 const WIDGET_CSP = {
-  connectDomains: ["https://api.instantdb.com", "wss://api.instantdb.com"],
+  connectDomains: MCP_HOST_TARGET === "openai"
+    ? ["https://api.instantdb.com", "wss://api.instantdb.com"]
+    : [],
   resourceDomains: [] as string[],
 };
 
@@ -68,8 +70,8 @@ const WIDGET_META = {
 
 const SERVER_INSTRUCTIONS = `Nexus is the user's personal workout, meal, and body-weight log.
 Logging rules: when the user mentions exercise they DID or food they ATE, call nexus_log_entries immediately — do not ask for confirmation. Estimate calories and macros yourself from the food description before calling; the server never guesses. Reuse exercise_key values from your_exercises in nexus_get_history so progressions cluster (e.g. always "bench_press_barbell", never "bench"). Variants are distinct exercises — barbell vs dumbbell vs incline each get their own key. When you log an exercise_key that is new or listed in uncatalogued_exercises, also pass muscle, pattern, equipment, and is_bodyweight so the server can catalogue it. When a log result carries pr: true on a workout, congratulate the user — they beat their best.
-Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely — but do that check in a SEPARATE earlier turn, never in the same turn as a log.
-IMPORTANT (widget rendering, all hosts): when you call nexus_log_entries, it must be the ONLY tool call in that turn — no tool search, no history check, nothing before or after it. Hosts fail to display the card otherwise (ChatGPT iOS drops it; Claude folds the whole run into its reasoning block and never mounts it). If the user asks for history AND a log in one message, log first (alone, so the card renders), then answer the history question in the next turn.
+Reading rules: any question about past workouts, meals, calories, weight, or progress is nexus_get_history. Check history before logging when a duplicate seems likely or when correctness depends on prior state; it is valid to read and then write in the same turn.
+Mutation truthfulness: generate a fresh mutation_id for each intended log, edit, or goal change, and reuse it only when retrying that exact action. Never claim a mutation succeeded unless the corresponding mutation tool returned success. If a stale edit is rejected, read the latest state and retry the user's intended change with a new mutation_id.
 Goal rules: only call nexus_set_goal when the user explicitly asks to change a calorie/protein/carb/fat target. Never call it just because they logged something.
 Nexus stores data and returns it; you do the coaching, analysis, and conversation.`;
 
@@ -112,6 +114,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
   private widgetTokenPromise: Promise<string | null> | null = null;
 
   private widgetToken(): Promise<string | null> {
+    if (MCP_HOST_TARGET !== "openai") return Promise.resolve(null);
     if (!this.widgetTokenPromise) {
       this.widgetTokenPromise = mintWidgetToken(this.env, this.props!.email).catch((e) => {
         console.error("mintWidgetToken failed", e);
@@ -128,7 +131,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
    *  views the live subscription can't reproduce (a friend's data, or a
    *  type-filtered slice) — the widget then keeps its static paint. */
   private async widgetResult(payload: Record<string, unknown>, opts: { live: boolean }) {
-    const token = opts.live ? await this.widgetToken() : null;
+    const token = MCP_HOST_TARGET === "openai" && opts.live ? await this.widgetToken() : null;
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload) }],
       structuredContent: payload,
@@ -197,13 +200,13 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,
         outputSchema: LogOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
         _meta: {
           ui: { resourceUri: WIDGET_URI },
         },
       },
       async (args) => {
-        void this.widgetToken(); // warm the token while we write + read back
+        if (MCP_HOST_TARGET === "openai") void this.widgetToken();
         const r = await safe(async () => {
           const logged = await logEntries(this.env, this.user(), args);
           // Return the whole day so the model has context and the widget has
@@ -213,7 +216,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           return { ...logged, ...day };
         });
         // A log always describes the viewer's own single day — safe to go live.
-        return r.ok ? this.widgetResult(r.value, { live: true }) : errorResult(r.error);
+        return r.ok ? this.widgetResult(r.value, { live: MCP_HOST_TARGET === "openai" }) : errorResult(r.error);
       },
     );
 
@@ -241,10 +244,10 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
       {
         title: "Update a Nexus entry",
         description:
-          "Use this when the user corrects or amends something already logged: fixing reps or weight, adding a set, changing meal items or macros, or adjusting a body-weight reading. Requires the entry id from nexus_get_history or a prior log result. The new data fully replaces the old entry.",
+          "Use this when the user corrects or amends something already logged: fixing reps or weight, adding a set, changing meal items or macros, or adjusting a body-weight reading. Requires the entry id and state_version from nexus_get_history or a prior log result. The new data fully replaces the old entry. If the state version is stale, read the latest entry before retrying.",
         inputSchema: UpdateInput.shape,
         outputSchema: UpdateOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
       },
       async (args) => {
         const r = await safe(() => updateEntry(this.env, this.user(), args));
@@ -278,7 +281,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Use this only when the user explicitly asks to change a daily target — e.g. 'set my calorie goal to 2200' or 'bump my protein goal to 150'. Only pass the fields they're changing; unmentioned fields keep their current value. Defaults are 2100 kcal / 120g protein until a goal is ever set. Every call creates a new goal record — past goals are kept as history, not overwritten, so a future day's card can show whatever goal was actually in effect that day.",
         inputSchema: GoalInput.shape,
         outputSchema: GoalOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
       },
       async (args) => {
         const r = await safe(() => setGoal(this.env, this.user(), args));

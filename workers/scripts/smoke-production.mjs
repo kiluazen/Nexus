@@ -3,8 +3,9 @@ import { createHash, randomBytes } from "node:crypto";
 const base = process.env.NEXUS_BASE_URL || "https://mcp.nexus.kushalsm.com";
 const email = process.env.REVIEWER_EMAIL;
 const password = process.env.REVIEWER_PASSWORD;
-const expectedWidgetUri = process.env.NEXUS_WIDGET_URI || "ui://widget/nexus-today-v13.html";
+const expectedWidgetUri = process.env.NEXUS_WIDGET_URI || "ui://widget/nexus-today-v15.html";
 const expectedWidgetDomain = process.env.NEXUS_WIDGET_DOMAIN || "https://mcp.nexus.kushalsm.com";
+const hostTarget = process.env.NEXUS_HOST_TARGET || "openai";
 
 if (!email || !password) {
   throw new Error("Set REVIEWER_EMAIL and REVIEWER_PASSWORD for the production smoke test.");
@@ -17,6 +18,12 @@ const challenge = b64url(createHash("sha256").update(verifier).digest());
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function stableJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
 }
 
 async function json(url, options = {}) {
@@ -159,32 +166,113 @@ assert(content?.mimeType === "text/html;profile=mcp-app", "widget resource has t
 assert(content?._meta?.ui?.domain === expectedWidgetDomain, "widget resource has the wrong standard domain");
 assert(content?.text?.includes("ui/initialize"), "widget bundle omits ui/initialize");
 assert(content?.text?.includes("ui/notifications/initialized"), "widget bundle omits initialized notification");
-assert(!content?.text?.includes("window.openai"), "widget bundle still contains window.openai");
 
 const today = new Date().toISOString().slice(0, 10);
+const canaryRun = process.env.NEXUS_CANARY_RUN || "v15";
+const canaryMutationId = `nexus-smoke-${hostTarget}-${today}-${canaryRun}`;
+const canaryEntry = {
+  type: "meal",
+  name: `Production ${hostTarget} MCP Apps canary water`,
+  meal_type: "snack",
+  calories: 0,
+  protein_g: 0,
+  carbs_g: 0,
+  fat_g: 0,
+};
+const logArguments = {
+  mutation_id: canaryMutationId,
+  date: today,
+  entries: [canaryEntry],
+};
 const logged = await mcp(token.access_token, initialized.sessionId, {
   jsonrpc: "2.0",
   id: 4,
   method: "tools/call",
   params: {
     name: "nexus_log_entries",
-    arguments: {
-      date: today,
-      entries: [{
-        type: "meal",
-        name: "Production MCP Apps bridge smoke test water",
-        meal_type: "snack",
-        calories: 0,
-        protein_g: 0,
-        carbs_g: 0,
-        fat_g: 0,
-      }],
-    },
+    arguments: logArguments,
   },
 });
 assert(!logged.body?.result?.isError, "widget-bearing logging call returned an MCP error");
 assert(logged.body?.result?.structuredContent?.period, "logging call omitted widget structuredContent");
-assert(logged.body?.result?._meta?.["nexus/widget"]?.token, "logging call omitted widget live-session metadata");
+
+const replayed = await mcp(token.access_token, initialized.sessionId, {
+  jsonrpc: "2.0",
+  id: 5,
+  method: "tools/call",
+  params: { name: "nexus_log_entries", arguments: logArguments },
+});
+assert(!replayed.body?.result?.isError, "exact mutation replay returned an MCP error");
+assert(
+  stableJson(replayed.body?.result?.structuredContent?.logged) ===
+    stableJson(logged.body?.result?.structuredContent?.logged),
+  `exact mutation replay did not return the original logged rows: ${JSON.stringify({ first: logged.body?.result?.structuredContent?.logged, replay: replayed.body?.result?.structuredContent?.logged })}`,
+);
+
+const reused = await mcp(token.access_token, initialized.sessionId, {
+  jsonrpc: "2.0",
+  id: 6,
+  method: "tools/call",
+  params: {
+    name: "nexus_log_entries",
+    arguments: { ...logArguments, entries: [{ ...canaryEntry, name: `${canaryEntry.name} changed` }] },
+  },
+});
+assert(reused.body?.result?.isError, "mutation_id reuse with different arguments was not rejected");
+
+const loggedRow = logged.body?.result?.structuredContent?.logged?.[0];
+assert(loggedRow?.id && loggedRow?.state_version, "logged row omitted id/state_version");
+const replacementData = {
+  meal_type: "snack",
+  items: [{ name: canaryEntry.name, quantity: 1, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }],
+};
+const updateArguments = {
+  mutation_id: `${canaryMutationId}-update`,
+  entry_id: loggedRow.id,
+  expected_state_version: loggedRow.state_version,
+  data: replacementData,
+};
+const updated = await mcp(token.access_token, initialized.sessionId, {
+  jsonrpc: "2.0",
+  id: 7,
+  method: "tools/call",
+  params: { name: "nexus_update_entry", arguments: updateArguments },
+});
+assert(!updated.body?.result?.isError, "versioned entry update returned an MCP error");
+assert(updated.body?.result?.structuredContent?.state_version, "versioned entry update omitted its next state_version");
+
+const updateReplay = await mcp(token.access_token, initialized.sessionId, {
+  jsonrpc: "2.0",
+  id: 8,
+  method: "tools/call",
+  params: { name: "nexus_update_entry", arguments: updateArguments },
+});
+assert(!updateReplay.body?.result?.isError, "exact update replay returned an MCP error");
+assert(
+  updateReplay.body?.result?.structuredContent?.state_version === updated.body?.result?.structuredContent?.state_version,
+  "exact update replay did not return the original state version",
+);
+
+const staleUpdate = await mcp(token.access_token, initialized.sessionId, {
+  jsonrpc: "2.0",
+  id: 9,
+  method: "tools/call",
+  params: {
+    name: "nexus_update_entry",
+    arguments: { ...updateArguments, mutation_id: `${canaryMutationId}-stale` },
+  },
+});
+assert(staleUpdate.body?.result?.isError, "stale state_version update was not rejected");
+const widgetSession = logged.body?.result?._meta?.["nexus/widget"];
+if (hostTarget === "openai") {
+  assert(widgetSession?.token, "OpenAI logging call omitted widget live-session metadata");
+} else {
+  assert(!widgetSession?.token, "Claude logging call exposed an unused live-session credential");
+  assert(
+    !content?._meta?.ui?.csp?.connectDomains?.some((domain) => domain.includes("instantdb")),
+    "Claude widget CSP still permits unused InstantDB connections",
+  );
+}
 
 console.log(JSON.stringify({
   ok: true,
@@ -196,4 +284,9 @@ console.log(JSON.stringify({
   standardHandshakePresent: true,
   legacyMetadataAbsent: true,
   widgetBearingToolCall: "passed",
+  exactMutationReplay: "passed",
+  conflictingMutationReuse: "rejected",
+  exactUpdateReplay: "passed",
+  staleUpdate: "rejected",
+  hostTarget,
 }, null, 2));

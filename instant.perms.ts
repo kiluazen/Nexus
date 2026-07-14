@@ -22,13 +22,19 @@ const rules = {
   // and is the only thing that ever touches this namespace.
   passwordCredentials: { allow: { $default: 'false' } },
 
+  // Receipts are a server-only correctness primitive. Clients neither need
+  // to read them nor may forge them; the Worker admin client owns the path.
+  mutationReceipts: { allow: { $default: 'false' } },
+
   entries: {
     bind: ['isOwner', "auth.id != null && auth.id in data.ref('owner.id')"],
     allow: {
       view: 'isOwner',
-      create: 'isOwner',
-      update: 'isOwner',
-      delete: 'isOwner',
+      create: 'false',
+      // Widget writes go through MCP tools so retry receipts and optimistic
+      // concurrency cannot be bypassed by a direct InstantDB transaction.
+      update: 'false',
+      delete: 'false',
     },
   },
 

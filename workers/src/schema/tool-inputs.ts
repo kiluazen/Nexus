@@ -6,7 +6,12 @@ export type { GoalInputT } from "./goal-shapes";
 const LOCAL_DATE_DESC =
   "The user's local date (YYYY-MM-DD). Always pass this from the user's timezone; if omitted the server falls back to the UTC date, which can land an evening entry on the wrong day.";
 
+export const MutationId = z.string().min(8).max(128).describe(
+  "A unique id for this intended mutation. Generate it once and reuse the same value only when retrying the same action; use a new value for a separate log or edit.",
+);
+
 export const LogInput = z.object({
+  mutation_id: MutationId,
   // Flat, discriminated by `type`. Publishing the real shape (instead of a bare
   // object) is what lets the model get it right in one call.
   entries: z.array(EntryInput).min(1).describe(
@@ -24,7 +29,11 @@ export const HistoryInput = z.object({
 });
 
 export const UpdateInput = z.object({
+  mutation_id: MutationId,
   entry_id: z.string().min(1),
+  expected_state_version: z.string().min(1).describe(
+    "The entry's state_version from nexus_get_history or the widget snapshot. The server rejects stale edits instead of overwriting newer data.",
+  ),
   data: EntryUpdateDataInput,
 });
 

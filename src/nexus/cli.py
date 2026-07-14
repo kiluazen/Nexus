@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import uuid
 import os
 import stat
 import sys
@@ -74,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update", help="Update an existing entry")
     update_parser.add_argument("--entry-id", required=True, help="Entry id from history/log output")
+    update_parser.add_argument(
+        "--expected-state-version",
+        required=True,
+        help="state_version from the latest history/log output",
+    )
     update_input = update_parser.add_mutually_exclusive_group(required=True)
     update_input.add_argument("--file", help="JSON file with the full replacement object")
     update_input.add_argument("--data", help="Inline JSON replacement object")
@@ -196,7 +202,7 @@ def handle_log(args: argparse.Namespace) -> None:
         client.request_json(
             "POST",
             "/api/v1/log",
-            body={"entries": entries, "date": args.date},
+            body={"mutation_id": str(uuid.uuid4()), "entries": entries, "date": args.date},
         )
     )
 
@@ -219,7 +225,12 @@ def handle_update(args: argparse.Namespace) -> None:
         client.request_json(
             "POST",
             "/api/v1/update",
-            body={"entry_id": args.entry_id, "data": data},
+            body={
+                "mutation_id": str(uuid.uuid4()),
+                "entry_id": args.entry_id,
+                "expected_state_version": args.expected_state_version,
+                "data": data,
+            },
         )
     )
 

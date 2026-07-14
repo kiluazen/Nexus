@@ -28,6 +28,7 @@ const LoggedItem = z
     meal_type: z.string().nullish(),
     totals: Totals.optional(),
     weight_kg: z.number().optional(),
+    state_version: z.string().optional(),
   })
   .partial()
   .passthrough();
@@ -53,6 +54,7 @@ const Workout = z
       .passthrough()
       .describe("The user's last session for this exercise, plus their all-time best weight."),
     pr: z.boolean().describe("True when today's top weight beats the user's previous best — call it out."),
+    state_version: z.string(),
   })
   .partial()
   .passthrough();
@@ -75,11 +77,12 @@ const Meal = z
     items: z.array(MealItem),
     totals: Totals,
     notes: z.string(),
+    state_version: z.string(),
   })
   .partial()
   .passthrough();
 const Weight = z
-  .object({ id: z.string(), date: z.string(), weight_kg: z.number() })
+  .object({ id: z.string(), date: z.string(), weight_kg: z.number(), state_version: z.string() })
   .partial()
   .passthrough();
 
@@ -149,6 +152,7 @@ export const UpdateOutput = z.object({
   totals: Totals.optional(),
   items_count: z.number().optional(),
   weight_kg: z.number().optional(),
+  state_version: z.string(),
 });
 
 export const GoalOutput = z

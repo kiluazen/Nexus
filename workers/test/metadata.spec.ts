@@ -7,10 +7,30 @@ import { widgetHtml } from "../src/widget/today-html";
 import { consentHtml } from "../src/auth/consent-html";
 import { hashPassword, verifyPassword } from "../src/auth/password";
 import type { NexusEnv } from "../src/types";
+import { LogInput, UpdateInput } from "../src/schema/tool-inputs";
+import { GoalInput } from "../src/schema/goal-shapes";
+import { deterministicMutationId, requestHash } from "../src/data/mutations";
 
 const env = { BASE_URL: "https://mcp.nexus.kushalsm.com" } as NexusEnv;
 
 describe("submission metadata", () => {
+  it("requires durable mutation identity and optimistic concurrency fields", () => {
+    expect(LogInput.safeParse({ entries: [{ type: "weight", weight_kg: 75 }] }).success).toBe(false);
+    expect(LogInput.safeParse({ mutation_id: "log-unique-1", entries: [{ type: "weight", weight_kg: 75 }] }).success).toBe(true);
+    expect(UpdateInput.safeParse({ mutation_id: "edit-unique-1", entry_id: "e1", data: { weight_kg: 75 } }).success).toBe(false);
+    expect(UpdateInput.safeParse({ mutation_id: "edit-unique-1", entry_id: "e1", expected_state_version: "v1", data: { weight_kg: 75 } }).success).toBe(true);
+    expect(GoalInput.safeParse({ calories: 2200 }).success).toBe(false);
+  });
+
+  it("derives stable cross-host mutation identities and canonical request hashes", async () => {
+    const a = await deterministicMutationId("user-1", "nexus_log_entries", "intent-1");
+    const b = await deterministicMutationId("user-1", "nexus_log_entries", "intent-1");
+    const c = await deterministicMutationId("user-1", "nexus_log_entries", "intent-2");
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(await requestHash({ b: 2, a: 1 })).toBe(await requestHash({ a: 1, b: 2 }));
+  });
   it("serves path-suffixed protected-resource metadata with the canonical no-slash MCP resource", async () => {
     for (const path of [
       "/.well-known/oauth-protected-resource/mcp",
