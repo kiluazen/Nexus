@@ -290,12 +290,77 @@ a { color: inherit; }
   padding: 1px 6px;
 }
 
+.setup-fields {
+  margin-top: 14px;
+  max-width: 500px;
+  display: grid;
+  gap: 16px;
+}
+
+.setup-field { min-width: 0; }
+
+.field-heading {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.field-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--body-ink);
+}
+
+.connection-toggle {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(10, 10, 35, 0.10);
+  color: rgba(10, 10, 35, 0.44);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.connection-toggle span {
+  min-height: 26px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.connection-toggle .selected {
+  color: var(--body-ink);
+  background: var(--paper);
+  box-shadow: 0 1px 3px rgba(10, 10, 35, 0.16);
+}
+
+.toggle-help {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .endpoint-row {
-  margin-top: 10px;
   display: flex;
   gap: 8px;
   align-items: stretch;
-  max-width: 460px;
+  min-width: 0;
 }
 
 .endpoint-row code {
@@ -308,13 +373,14 @@ a { color: inherit; }
   padding: 10px 12px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   display: flex;
   align-items: center;
 }
 
-#copy-btn {
+.copy-btn {
   font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
@@ -326,8 +392,8 @@ a { color: inherit; }
   cursor: pointer;
 }
 
-#copy-btn:hover,
-#copy-btn.copied { background: var(--body-ink); }
+.copy-btn:hover,
+.copy-btn.copied { background: var(--body-ink); }
 
 /* Footer */
 .site-footer {
@@ -335,14 +401,16 @@ a { color: inherit; }
   margin: 0 auto;
   padding: 14px 4px 18px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--muted);
   border-top: 1px solid var(--line);
 }
 
-.site-footer a { color: var(--muted); }
+.site-footer nav { display: flex; gap: 18px; }
+.site-footer a { color: var(--muted); text-decoration: none; }
 .site-footer a:hover { color: var(--ink); }
 
 /* Legal pages (privacy / terms / usage) */
@@ -418,12 +486,10 @@ a { color: inherit; }
 }
 
 @media (max-width: 640px) {
-  .site-header { flex-wrap: wrap; row-gap: 10px; }
+  .field-heading { align-items: flex-end; }
+  .connection-toggle span { padding-inline: 10px; }
   .nav-links {
-    order: 2;
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 14px;
     font-size: 11px;
   }
   .hero {
@@ -444,7 +510,8 @@ a { color: inherit; }
     border-radius: 28px;
   }
   .demo-phone video { border-radius: 23px; }
-  .site-footer { flex-direction: column; gap: 4px; align-items: flex-end; }
+  .site-footer { flex-direction: column; gap: 10px; align-items: flex-start; }
+  .site-footer nav { flex-wrap: wrap; gap: 8px 16px; }
   .bg-art {
     opacity: 0.6;
     background-position: left -3vw bottom, right -3vw bottom;
@@ -502,3 +569,19 @@ a { color: inherit; }
     background-size: auto 78%, auto 86%;
   }
 }
+
+/* ---- ChatGPT/Claude host toggle (get-started) ---- */
+.host-toggle {
+  display: inline-flex; margin: 18px 0 6px; border: 1.5px solid var(--ink);
+  border-radius: 999px; padding: 3px; gap: 2px; background: transparent;
+}
+.host-btn {
+  display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer;
+  font: 600 15px/1 inherit; font-family: inherit; color: var(--ink);
+  background: transparent; border-radius: 999px; padding: 9px 16px;
+}
+.host-btn svg { width: 17px; height: 17px; }
+.host-btn[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+body.claude .gpt-only { display: none; }
+body:not(.claude) .claude-only { display: none; }
+.claude-open { font-weight: 600; color: var(--ink); }
