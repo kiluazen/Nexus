@@ -200,7 +200,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Do not use for advice, planning, future intentions, or nutrition questions.",
         inputSchema: LogInput.shape,
         outputSchema: LogOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+        annotations: { title: "Log to Nexus", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
         _meta: {
           ui: { resourceUri: WIDGET_URI },
         },
@@ -228,7 +228,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Use this when the user asks what they ate, what workouts they did, their weight trend, calories, macros, protein, progress on an exercise, or wants a summary of any past day or date range. Also call it before logging when a duplicate entry seems possible. Do not use for general nutrition knowledge or workout advice.",
         inputSchema: HistoryInput.shape,
         outputSchema: HistoryOutput.shape,
-        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        annotations: { title: "Get Nexus history", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
         // No resourceUri on purpose: reads answer in text, they don't render
         // the editable card. The card is for logging/correcting, not for
         // "what's my total?" questions.
@@ -247,7 +247,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Use this when the user corrects or amends something already logged: fixing reps or weight, adding a set, changing meal items or macros, or adjusting a body-weight reading. Requires the entry id and state_version from nexus_get_history or a prior log result. The new data fully replaces the old entry. If the state version is stale, read the latest entry before retrying.",
         inputSchema: UpdateInput.shape,
         outputSchema: UpdateOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
+        annotations: { title: "Update a Nexus entry", readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
       },
       async (args) => {
         const r = await safe(() => updateEntry(this.env, this.user(), args));
@@ -265,7 +265,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
         outputSchema: FriendsOutput.shape,
         // Not read-only (add/accept/remove mutate) and not open-world: it only
         // touches this app's own data, never a third-party service.
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+        annotations: { title: "Manage Nexus friends", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       async (args) => {
         const r = await safe(() => manageFriends(this.env, this.user(), args));
@@ -281,7 +281,7 @@ export class NexusMcpAgent extends McpAgent<NexusEnv, unknown, NexusProps> {
           "Use this only when the user explicitly asks to change a daily target — e.g. 'set my calorie goal to 2200' or 'bump my protein goal to 150'. Only pass the fields they're changing; unmentioned fields keep their current value. Defaults are 2100 kcal / 120g protein until a goal is ever set. Every call creates a new goal record — past goals are kept as history, not overwritten, so a future day's card can show whatever goal was actually in effect that day.",
         inputSchema: GoalInput.shape,
         outputSchema: GoalOutput.shape,
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+        annotations: { title: "Set Nexus goal", readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
       },
       async (args) => {
         const r = await safe(() => setGoal(this.env, this.user(), args));
